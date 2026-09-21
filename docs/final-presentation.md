@@ -1,7 +1,5 @@
 # Final presentation
 
-**Status:** Pending; date to confirm.
-
 ## Required slides
 - [ ] Explain the problem and motivation.
 - [ ] Explain background and approach in accessible terms.
@@ -16,6 +14,6 @@
 - [ ] Communication and contributions (20).
 
 ## Artifacts
-- Slide draft: link pending.
-- Final slides: link pending.
-- Demo/video if used: link pending.
+- Slide draft: 
+- Final slides: 
+- Demo/video if used: 
