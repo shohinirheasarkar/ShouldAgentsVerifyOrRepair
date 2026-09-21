@@ -1,6 +1,5 @@
 # Related works
 
-The attached proposal discusses the works below. **Citations, paper claims, and benchmark suitability have not yet been independently verified.** Confirm them against primary papers before citing them in a submission.
 
 | Paper or topic in proposal | Source to verify | Summary / annotated notes | Relevance or distinction |
 | --- | --- | --- | --- |
