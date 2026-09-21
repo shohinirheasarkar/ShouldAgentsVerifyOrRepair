@@ -37,6 +37,8 @@ When adding a code file, put a short header or docstring describing its purpose,
 | Final presentation | [Checklist](docs/final-presentation.md) | Link pending |
 | Final paper-style report | [Checklist](docs/final-report.md) | Link pending |
 
+## Project planning 
+https://github.com/users/shohinirheasarkar/projects/3/views/1
 
 ## Team
 - Shohini Rhea Sarkar — [@shohinirheasarkar](https://github.com/shohinirheasarkar)
