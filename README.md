@@ -29,7 +29,7 @@ None yet. If a notebook is useful later, link it here, state its inputs and expe
 When adding a code file, put a short header or docstring describing its purpose, inputs, outputs, and how to run it. Explain non-obvious variables and policy choices; use clear names, fixed seeds for randomized experiments, and explicit units for costs and latency. Put the exact run command and dependencies in this README. Describe which data were used for development and which were held out. Ask another teammate to review changes in a pull request.
 
 ## Progress trackers
-A dependency-aware [weekly tracker](docs/weekly-tracker.md) is being drafted and will be added **after the team agrees on the schedule**. Use one GitHub Project board for Issues (assignable work) and pull requests (proposed changes to review). No board or Issues have been created or verified yet. Monday is a progress discussion; proposed Tuesday and Thursday assignments will appear in the tracker.
+A dependency-aware weekly tracker is being drafted and will be linked here **after the team agrees on the schedule**. Use one GitHub Project board for Issues (assignable work) and pull requests (proposed changes to review). No board or Issues have been created or verified yet. Monday is a progress discussion; proposed Tuesday and Thursday assignments will appear in the tracker.
 
 ## Links to major documents and presentations
 | Deliverable | Planning page | Finished artifact |
