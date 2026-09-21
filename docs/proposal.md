@@ -1,6 +1,6 @@
 # Proposal
 
-**Status:** Draft. [Source proposal PDF](../../issues) is not hosted in this repository; add its stable link here when available.
+**Status:** Draft. Source proposal PDF was provided as an attachment; add a stable link when available.
 
 ## Assignment checklist
 - [ ] State the problem, why it matters, and the proposed contribution.
