@@ -1,7 +1,5 @@
 # Midterm report
 
-**Status:** Not submitted; date to confirm.
-
 ## Required submission
 - [ ] Short report.
 - [ ] Runnable code with instructions.
@@ -15,7 +13,7 @@
 - [ ] **Evaluation plan and milestones (25):** held-out tasks, meaningful metrics, fair comparisons, resource budgets, risks, remaining plan.
 
 ## Artifacts
-- Working draft: link pending.
-- Submitted report: link pending.
-- Code revision and reproduction command: pending.
-- Preliminary results and figures: pending.
+- Working draft: 
+- Submitted report: 
+- Code revision and reproduction command: 
+- Preliminary results and figures: 
