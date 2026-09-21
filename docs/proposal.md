@@ -1,7 +1,5 @@
 # Proposal
 
-**Status:** Draft. Source proposal PDF was provided as an attachment; add a stable link when available.
-
 ## Assignment checklist
 - [ ] State the problem, why it matters, and the proposed contribution.
 - [ ] Review the closest related work with checked citations.
@@ -13,7 +11,4 @@
 - [x] Provide the [public repository link](https://github.com/shohinirheasarkar/ShouldAgentsVerifyOrRepair).
 
 ## Working documents
-- Proposal draft: link pending.
-- Submitted proposal: link pending.
-- Submission date: confirm against course schedule. The attached draft is dated September 27, 2026, after the stated project start.
-- Open choices: see [weekly plan draft in the README](../README.md#progress-trackers) and confirm scope before freezing the schedule.
+- Submitted proposal:(https://docs.google.com/document/d/1hW--youf5aFT1o7KdtWqguEWT8BFHijcqbDOsnpL1A0/edit?tab=t.0)
