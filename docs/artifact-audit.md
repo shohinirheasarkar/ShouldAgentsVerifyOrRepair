@@ -1,7 +1,5 @@
 # Artifact audit
 
-**Status:** Pending; date to confirm.
-
 ## Rubric checklist
 - [ ] **Research question and contribution (20):** precise hypothesis and clear distinction from closest prior work.
 - [ ] **Experimental rigor (35):** strong baselines, controlled comparisons, ablations, held-out evaluation, uncertainty estimates as appropriate.
@@ -9,6 +7,6 @@
 - [ ] **Reproducibility and reporting (20):** paper-style report, runnable code, documented configurations/dependencies, enough detail to reproduce main results.
 
 ## Artifacts
-- Audit submission/link: pending.
-- Code revision and reproduction instructions: pending.
-- Evaluation tables and figures: pending.
+- Audit submission/link:
+- Code revision and reproduction instructions: 
+- Evaluation tables and figures: 
