@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verify-repair"
+version = "0.1.0"
+description = "Deterministic verify-versus-repair memory substrate"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+semantic = ["faiss-cpu>=1.8", "FlagEmbedding>=1.2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["semantic: requires optional BGE-M3 model and FAISS"]
+addopts = "-m 'not semantic'"

@@ -1,0 +1,12 @@
+seed: 12345
+dataset_id: toy-v1
+database: ':memory:'
+retrieval:
+  backend: keyword
+  top_k: 1
+costs:
+  mode: nominal
+  verify: 1.0
+  repair: 5.0
+logging:
+  format: jsonl

@@ -1,0 +1,41 @@
+- summary_id: alice_profile
+  template: '{name} is a {job} living in {location}.'
+  slots: {name: alice_name, job: alice_job, location: alice_location}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: alice_office
+  template: 'Alice works in {office}.'
+  slots: {office: alice_office}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: alice_digest
+  template: 'Alice profile digest: {location}.'
+  slots: {location: alice_location}
+  depends_on: [alice_profile]
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: bob_profile
+  template: '{name} is an {job} living in {location}.'
+  slots: {name: bob_name, job: bob_job, location: bob_location}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: bob_office
+  template: 'Bob works in {office}.'
+  slots: {office: bob_office}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: carol_profile
+  template: '{name} is a {job} living in {location}.'
+  slots: {name: carol_name, job: carol_job, location: carol_location}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: carol_office
+  template: 'Carol works in {office}.'
+  slots: {office: carol_office}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: dana_profile
+  template: '{name} is an {job} living in {location}.'
+  slots: {name: dana_name, job: dana_job, location: dana_location}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: erin_profile
+  template: '{name} is a {job} living in {location}.'
+  slots: {name: erin_name, job: erin_job, location: erin_location}
+  created_at: '2026-01-01T00:00:00+00:00'
+- summary_id: erin_office
+  template: 'Erin works in {office}.'
+  slots: {office: erin_office}
+  created_at: '2026-01-01T00:00:00+00:00'

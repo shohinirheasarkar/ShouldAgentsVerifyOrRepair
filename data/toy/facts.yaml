@@ -1,0 +1,20 @@
+- {fact_id: alice_name, entity: Alice, attribute: name, value: Alice, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: alice_job, entity: Alice, attribute: job, value: researcher, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: alice_location, entity: Alice, attribute: location, value: Maryland, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: alice_office, entity: Alice, attribute: office, value: Room A, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: bob_name, entity: Bob, attribute: name, value: Bob, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: bob_job, entity: Bob, attribute: job, value: engineer, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: bob_location, entity: Bob, attribute: location, value: Oregon, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: bob_office, entity: Bob, attribute: office, value: Room B, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: carol_name, entity: Carol, attribute: name, value: Carol, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: carol_job, entity: Carol, attribute: job, value: designer, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: carol_location, entity: Carol, attribute: location, value: Vermont, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: carol_office, entity: Carol, attribute: office, value: Room C, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: dana_name, entity: Dana, attribute: name, value: Dana, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: dana_job, entity: Dana, attribute: job, value: analyst, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: dana_location, entity: Dana, attribute: location, value: Maine, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: dana_office, entity: Dana, attribute: office, value: Room D, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: erin_name, entity: Erin, attribute: name, value: Erin, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: erin_job, entity: Erin, attribute: job, value: writer, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: erin_location, entity: Erin, attribute: location, value: Nevada, valid_from: '2026-01-01T00:00:00+00:00'}
+- {fact_id: erin_office, entity: Erin, attribute: office, value: Room E, valid_from: '2026-01-01T00:00:00+00:00'}

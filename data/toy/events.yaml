@@ -1,0 +1,9 @@
+- {type: correction, event_id: alice_move, timestamp: '2026-01-02T00:00:00+00:00', sequence_number: 1, fact_id: alice_location, change_type: CORRECTION, value: Boston}
+- {type: query, event_id: q1, timestamp: '2026-01-02T01:00:00+00:00', sequence_number: 2, query_id: q1, query_text: 'Alice researcher', top_k: 1, expected_fact_ids: [alice_location]}
+- {type: query, event_id: q2, timestamp: '2026-01-02T02:00:00+00:00', sequence_number: 3, query_id: q2, query_text: 'Alice researcher', top_k: 1, expected_fact_ids: [alice_location]}
+- {type: query, event_id: q3, timestamp: '2026-01-02T03:00:00+00:00', sequence_number: 4, query_id: q3, query_text: 'Alice researcher', top_k: 1, expected_fact_ids: [alice_location]}
+- {type: correction, event_id: bob_move, timestamp: '2026-01-03T00:00:00+00:00', sequence_number: 5, fact_id: bob_location, change_type: UPDATE, value: Utah}
+- {type: correction, event_id: erin_retract, timestamp: '2026-01-04T00:00:00+00:00', sequence_number: 6, fact_id: erin_office, change_type: RETRACTION}
+- {type: correction, event_id: alice_temp, timestamp: '2026-01-05T00:00:00+00:00', sequence_number: 7, fact_id: alice_office, change_type: TEMPORARY_EXCEPTION, value: Room Z, valid_to: '2026-01-07T00:00:00+00:00'}
+- {type: query, event_id: q4, timestamp: '2026-01-05T01:00:00+00:00', sequence_number: 8, query_id: q4, query_text: 'Alice office', top_k: 1, expected_fact_ids: [alice_office]}
+- {type: query, event_id: q5, timestamp: '2026-01-07T01:00:00+00:00', sequence_number: 9, query_id: q5, query_text: 'Alice office', top_k: 1, expected_fact_ids: [alice_office]}
