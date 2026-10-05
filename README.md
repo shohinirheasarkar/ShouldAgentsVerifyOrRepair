@@ -16,6 +16,7 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | [docs/final-presentation.md](docs/final-presentation.md) | Presentation rubric and slides | Pending |
 | [docs/final-report.md](docs/final-report.md) | Final paper checklist | Pending |
 | [docs/related-works.md](docs/related-works.md) | Papers to verify and annotated notes | In progress |
+| [docs/research-grade-memory-handoff.md](docs/research-grade-memory-handoff.md) | Roadmap from the deterministic MVP to a research-grade memory experiment | Active handoff |
 
 
 ## How to obtain, set up, and use the code
