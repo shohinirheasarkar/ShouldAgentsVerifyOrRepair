@@ -6,6 +6,7 @@ from pathlib import Path
 from verify_repair.config import load_config
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.verify_only import VerifyOnly
+from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
 from verify_repair.retrieval.hybrid import HybridRetriever
 from verify_repair.simulator.engine import Simulator
 from verify_repair.simulator.toy import load_toy
@@ -24,7 +25,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command")
     run = sub.add_parser("run-toy", help="replay toy facts, summaries, and events")
-    run.add_argument("--policy", choices=["verify-only", "eager-refresh"], required=True)
+    run.add_argument(
+    "--policy",
+    choices=[
+        "verify-only",
+        "eager-refresh",
+        "repair-on-first-access",
+    ],
+    required=True,)
     run.add_argument("--retrieval", choices=["keyword", "hybrid"], default="keyword")
     run.add_argument("--verbose", action="store_true")
     run.add_argument("--jsonl", type=Path, help="write structured event records")
@@ -38,7 +46,12 @@ def main() -> None:
     if args.retrieval == "hybrid":
         from verify_repair.retrieval.semantic import BGEM3FaissRetriever
         retriever = HybridRetriever(retriever, BGEM3FaissRetriever())
-    policy = VerifyOnly() if args.policy == "verify-only" else EagerRefresh()
+    policies = {
+    "verify-only": VerifyOnly,
+    "eager-refresh": EagerRefresh,
+    "repair-on-first-access": RepairOnFirstAccess,
+    }
+    policy = policies[args.policy]()
     result = Simulator(ledger, summaries, retriever, policy, config).run(events)
     if args.jsonl:
         args.jsonl.write_text("".join(json.dumps(row, sort_keys=True) + "\n" for row in result.logs))

@@ -7,6 +7,9 @@ from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.simulator.engine import Simulator
 from verify_repair.simulator.toy import load_toy
+from verify_repair.policies.eager_refresh import EagerRefresh
+from verify_repair.policies.verify_only import VerifyOnly
+from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
 
 DATA = Path(__file__).resolve().parents[1] / "data/toy"
 
@@ -90,3 +93,27 @@ def test_required_three_query_canonical_slice_under_both_policies():
             assert all(row["current_evidence"]["location"] == "Boston" for row in result.logs
                        if row["query_id"] in ("q1", "q2", "q3"))
         db.close()
+
+
+def test_repair_on_first_access_repairs_once():
+    result, db, _, store = run(RepairOnFirstAccess())
+
+    alice_queries = [
+        row
+        for row in result.logs
+        if row["query_id"] in ("q1", "q2", "q3")
+    ]
+
+    assert [row["action"] for row in alice_queries] == [
+        "REPAIR",
+        "NO_OP",
+        "NO_OP",
+    ]
+    assert result.verifications == 0
+
+    profile = store.get_summary("alice_profile")
+    assert not profile.is_stale
+    assert "Boston" in profile.text
+    assert store.get_source_facts("alice_profile")["location"].version == 2
+
+    db.close()
