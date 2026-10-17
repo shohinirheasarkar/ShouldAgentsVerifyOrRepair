@@ -11,6 +11,7 @@ from verify_repair.models import FactVersionRef, RepairBuildError
 from verify_repair.policies.base import MaintenanceAction
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.policies.eager_refresh import EagerRefresh
+from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
 
 T = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -75,4 +76,13 @@ def test_policies_only_return_actions():
     verify, eager = VerifyOnly(), EagerRefresh()
     assert verify.on_correction(["alice"]) == []
     assert verify.on_stale_access("alice", "where") == MaintenanceAction.VERIFY
-    assert eager.on_correction(["alice"]) == [("alice", MaintenanceAction.REPAIR)]
+    assert eager.on_correction(["alice"]) == [
+        ("alice", MaintenanceAction.REPAIR)
+    ]
+
+    first_access = RepairOnFirstAccess()
+    assert first_access.on_correction(["alice"]) == []
+    assert (
+        first_access.on_stale_access("alice", "where")
+        == MaintenanceAction.REPAIR
+    )

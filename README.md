@@ -42,6 +42,7 @@ pytest -q
 python -m verify_repair.cli --help
 python -m verify_repair.cli run-toy --policy verify-only
 python -m verify_repair.cli run-toy --policy eager-refresh
+python -m verify_repair.cli run-toy --policy repair-on-first-access
 ```
 
 An editable install (`python -m pip install -e '.[dev]'`) also works on normal
@@ -63,8 +64,10 @@ retraction, and temporary exception events. Alice's location begins as
 Maryland, changes to Boston, and is queried three times. VerifyOnly returns
 Boston as fresh evidence each time while the stored summary remains Maryland
 and stale. EagerRefresh repairs the summary at correction time and the later
-queries need no maintenance. All toy data are development/demo data; there is
-no held-out benchmark in this phase.
+queries need no maintenance. `RepairOnFirstAccess` leaves an affected summary 
+stale until it is first retrieved by a later query, then repairs it persistently; 
+if the summary is never queried, no repair cost is paid. All toy data are 
+development/demo data; there is no held-out benchmark in this phase.
 
 Optional dense retrieval uses BGE-M3 with FAISS:
 
