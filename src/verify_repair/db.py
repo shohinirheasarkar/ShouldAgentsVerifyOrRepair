@@ -65,6 +65,8 @@ def initialize(db: sqlite3.Connection) -> None:
       verification_cost_this_episode REAL NOT NULL DEFAULT 0,
       last_repair_at TEXT, created_at TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS summaries_stale
+    ON summaries(is_stale, summary_id);
     CREATE TABLE IF NOT EXISTS summary_slots (
       summary_id TEXT NOT NULL REFERENCES summaries(summary_id),
       slot_name TEXT NOT NULL, fact_id TEXT NOT NULL,

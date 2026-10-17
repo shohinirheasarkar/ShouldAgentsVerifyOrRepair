@@ -10,6 +10,7 @@ from verify_repair.simulator.toy import load_toy
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
+from verify_repair.policies.periodic_refresh import PeriodicRefresh
 
 DATA = Path(__file__).resolve().parents[1] / "data/toy"
 
@@ -115,5 +116,43 @@ def test_repair_on_first_access_repairs_once():
     assert not profile.is_stale
     assert "Boston" in profile.text
     assert store.get_source_facts("alice_profile")["location"].version == 2
+
+    db.close()
+
+def test_periodic_refresh_verifies_before_tick_then_repairs():
+    db, ledger, store, retriever, events = load_toy(DATA)
+
+    result = Simulator(
+        ledger,
+        store,
+        retriever,
+        PeriodicRefresh(refresh_interval_events=2),
+    ).run(events[:4])
+
+    query_rows = [
+        row
+        for row in result.logs
+        if row["query_id"] in ("q1", "q2", "q3")
+        and row["summary_id"] == "alice_profile"
+        and row["maintenance_trigger"] is None
+    ]
+
+    assert [row["action"] for row in query_rows] == [
+        "VERIFY",
+        "NO_OP",
+        "NO_OP",
+    ]
+
+    scheduled_repairs = [
+        row
+        for row in result.logs
+        if row["maintenance_trigger"] == "periodic_tick"
+    ]
+
+    assert scheduled_repairs
+    assert all(row["maintenance_tick"] % 2 == 0 for row in scheduled_repairs)
+    assert result.stale_source_uses == 0
+    assert not store.get_summary("alice_profile").is_stale
+    assert "Boston" in store.get_summary("alice_profile").text
 
     db.close()
