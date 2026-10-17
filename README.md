@@ -43,6 +43,7 @@ python -m verify_repair.cli --help
 python -m verify_repair.cli run-toy --policy verify-only
 python -m verify_repair.cli run-toy --policy eager-refresh
 python -m verify_repair.cli run-toy --policy repair-on-first-access
+python -m verify_repair.cli run-toy --policy periodic-refresh --refresh-interval-events 100
 ```
 
 An editable install (`python -m pip install -e '.[dev]'`) also works on normal
