@@ -6,6 +6,7 @@ class RepairOnFirstAccess:
     """Repair stale memory on its first query instead of at correction time."""
 
     name = "repair-on-first-access"
+    refresh_interval_events = None
 
     def on_correction(
         self,
@@ -19,3 +20,9 @@ class RepairOnFirstAccess:
         query: str,
     ) -> MaintenanceAction:
         return MaintenanceAction.REPAIR
+
+    def on_maintenance_tick(
+    self,
+    stale_summary_ids: list[str],
+    ) -> list[tuple[str, MaintenanceAction]]:
+        return []

@@ -11,6 +11,20 @@ class MaintenanceAction(StrEnum):
 
 class MaintenancePolicy(Protocol):
     name: str
+    refresh_interval_events: int | None
 
-    def on_correction(self, affected_summary_ids: list[str]) -> list[tuple[str, MaintenanceAction]]: ...
-    def on_stale_access(self, summary_id: str, query: str) -> MaintenanceAction: ...
+    def on_correction(
+        self,
+        affected_summary_ids: list[str],
+    ) -> list[tuple[str, MaintenanceAction]]: ...
+
+    def on_stale_access(
+        self,
+        summary_id: str,
+        query: str,
+    ) -> MaintenanceAction: ...
+
+    def on_maintenance_tick(
+        self,
+        stale_summary_ids: list[str],
+    ) -> list[tuple[str, MaintenanceAction]]: ...

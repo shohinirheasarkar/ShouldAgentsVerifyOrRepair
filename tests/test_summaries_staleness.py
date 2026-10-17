@@ -49,6 +49,7 @@ def test_dag_and_stale_episodes():
         store.add_summary_dependency("c", "a")
     ledger.append_correction("location", "Boston", T + timedelta(days=1), "event1")
     assert mark_stale_from_fact_change(store, "location", "event1", T + timedelta(days=1)) == ["a", "c"]
+    assert store.list_stale_summary_ids() == ["a", "c"]
     assert not store.get_summary("b").is_stale
     store.db.execute("UPDATE summaries SET queries_this_episode=3 WHERE summary_id='c'")
     mark_stale_from_fact_change(store, "location", "event1", T + timedelta(days=1))

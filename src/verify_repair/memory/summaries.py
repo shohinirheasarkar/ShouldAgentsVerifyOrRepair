@@ -56,6 +56,20 @@ class SummaryStore:
             raise SummaryNotFound(summary_id)
         return _summary(row)
 
+    def list_stale_summary_ids(self) -> list[str]:
+        """Return every currently stale summary in deterministic order."""
+        return [
+            row["summary_id"]
+            for row in self.db.execute(
+                """
+                SELECT summary_id
+                FROM summaries
+                WHERE is_stale = 1
+                ORDER BY summary_id
+                """
+            )
+        ]
+
     def get_source_facts(self, summary_id: str) -> dict[str, FactVersionRef]:
         self.get_summary(summary_id)
         return {row["slot_name"]: FactVersionRef(row["fact_id"], row["fact_version"])

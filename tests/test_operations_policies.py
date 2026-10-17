@@ -12,6 +12,7 @@ from verify_repair.policies.base import MaintenanceAction
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
+from verify_repair.policies.periodic_refresh import PeriodicRefresh
 
 T = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -86,3 +87,24 @@ def test_policies_only_return_actions():
         first_access.on_stale_access("alice", "where")
         == MaintenanceAction.REPAIR
     )
+
+
+def test_periodic_refresh_policy_returns_expected_actions():
+    policy = PeriodicRefresh()
+    assert policy.refresh_interval_events == 100
+
+    assert policy.on_correction(["alice", "bob"]) == []
+
+    assert (
+        policy.on_stale_access("alice", "Where does Alice live?")
+        == MaintenanceAction.VERIFY
+    )
+
+    assert policy.on_maintenance_tick(["bob", "alice"]) == [
+        ("alice", MaintenanceAction.REPAIR),
+        ("bob", MaintenanceAction.REPAIR),
+    ]
+
+def test_periodic_refresh_rejects_invalid_interval():
+    with pytest.raises(ValueError, match="refresh interval"):
+        PeriodicRefresh(0)
