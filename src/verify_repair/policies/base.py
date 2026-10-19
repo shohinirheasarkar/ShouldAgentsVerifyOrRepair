@@ -1,6 +1,16 @@
 """Maintenance actions are decisions; the engine owns execution and storage."""
+from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
+
+
+@dataclass(frozen=True)
+class MaintenanceCandidate:
+    """Stored stale age supplied to storage-free maintenance policies."""
+
+    summary_id: str
+    stale_since: datetime
 
 
 class MaintenanceAction(StrEnum):
@@ -26,5 +36,5 @@ class MaintenancePolicy(Protocol):
 
     def on_maintenance_tick(
         self,
-        stale_summary_ids: list[str],
+        candidates: list[MaintenanceCandidate],
     ) -> list[tuple[str, MaintenanceAction]]: ...

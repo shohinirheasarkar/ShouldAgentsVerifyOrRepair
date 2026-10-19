@@ -19,7 +19,9 @@ def mark_stale_from_fact_change(store: SummaryStore, changed_fact_id: str,
             inserted = store.db.execute("INSERT OR IGNORE INTO stale_events VALUES (?,?)",
                                         (summary_id, correction_event_id)).rowcount
             if inserted:
-                store.db.execute("""UPDATE summaries SET is_stale=1,stale_since=?,stale_episode_id=?,
+                store.db.execute("""UPDATE summaries SET is_stale=1,
+                    stale_since=CASE WHEN is_stale=1 THEN stale_since ELSE ? END,
+                    stale_episode_id=?,
                     queries_this_episode=0,verification_cost_this_episode=0 WHERE summary_id=?""",
                     (stamp(timestamp), f"{summary_id}:{correction_event_id}", summary_id))
     return ordered

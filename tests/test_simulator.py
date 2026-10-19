@@ -146,7 +146,7 @@ def test_periodic_refresh_verifies_before_tick_then_repairs():
     scheduled_repairs = [
         row
         for row in result.logs
-        if row["maintenance_trigger"] == "periodic_tick"
+        if row["maintenance_trigger"] == "scheduled_tick"
     ]
 
     assert scheduled_repairs

@@ -1,6 +1,6 @@
 """Verify stale accesses and repair stale summaries on scheduled ticks."""
 
-from verify_repair.policies.base import MaintenanceAction
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
 
 
 class PeriodicRefresh:
@@ -28,9 +28,9 @@ class PeriodicRefresh:
 
     def on_maintenance_tick(
         self,
-        stale_summary_ids: list[str],
+        candidates: list[MaintenanceCandidate],
     ) -> list[tuple[str, MaintenanceAction]]:
         return [
-            (summary_id, MaintenanceAction.REPAIR)
-            for summary_id in sorted(stale_summary_ids)
+            (candidate.summary_id, MaintenanceAction.REPAIR)
+            for candidate in sorted(candidates, key=lambda item: item.summary_id)
         ]

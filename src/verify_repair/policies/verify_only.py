@@ -1,5 +1,5 @@
 """Verify every stale access and leave the stored summary stale."""
-from verify_repair.policies.base import MaintenanceAction
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
 
 
 class VerifyOnly:
@@ -14,6 +14,6 @@ class VerifyOnly:
 
     def on_maintenance_tick(
     self,
-    stale_summary_ids: list[str],
+    candidates: list[MaintenanceCandidate],
     ) -> list[tuple[str, MaintenanceAction]]:
         return []
