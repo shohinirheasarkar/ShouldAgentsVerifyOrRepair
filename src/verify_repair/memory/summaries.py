@@ -70,6 +70,18 @@ class SummaryStore:
             )
         ]
 
+    def list_stale_maintenance_candidates(self) -> list[tuple[str, datetime]]:
+        """Return stale IDs and parsed ages; reject missing stale timestamps."""
+        candidates = []
+        for row in self.db.execute(
+            "SELECT summary_id, stale_since FROM summaries WHERE is_stale=1 ORDER BY summary_id"
+        ):
+            timestamp = parse(row["stale_since"])
+            if timestamp is None:
+                raise ValueError(f"stale summary {row['summary_id']} has no stale_since")
+            candidates.append((row["summary_id"], timestamp))
+        return candidates
+
     def get_source_facts(self, summary_id: str) -> dict[str, FactVersionRef]:
         self.get_summary(summary_id)
         return {row["slot_name"]: FactVersionRef(row["fact_id"], row["fact_version"])

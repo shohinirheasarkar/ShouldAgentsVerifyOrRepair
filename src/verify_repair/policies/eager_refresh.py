@@ -1,5 +1,5 @@
 """Repair every affected summary immediately after a fact change."""
-from verify_repair.policies.base import MaintenanceAction
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
 
 
 class EagerRefresh:
@@ -14,6 +14,6 @@ class EagerRefresh:
 
     def on_maintenance_tick(
         self,
-        stale_summary_ids: list[str],
+        candidates: list[MaintenanceCandidate],
     ) -> list[tuple[str, MaintenanceAction]]:
         return []

@@ -85,6 +85,18 @@ rebuilt from committed summary text. The adapter initializes BGE-M3 before
 importing FAISS: the reverse native-library import order caused a segmentation
 fault on the tested macOS/Python 3.13 environment.
 
+## Oldest-First maintenance
+
+Oldest-First is a limited-budget comparison baseline. It verifies stale query
+accesses and repairs at scheduled ticks, with a default interval of 100 processed
+events and one repair slot per tick. Both settings must be positive. Candidates
+are ranked by `(stale_since, summary_id)` ascending. `stale_since` tracks the
+beginning of the uninterrupted stale period, even across further corrections.
+
+```bash
+python -m verify_repair.cli run-toy --policy oldest-first --refresh-interval-events 100 --repair-slots-per-tick 1
+```
+
 ## Tutorial notebooks
 - to be added -
 

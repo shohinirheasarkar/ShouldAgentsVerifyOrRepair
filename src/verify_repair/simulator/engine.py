@@ -13,7 +13,7 @@ from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.staleness import mark_stale_from_fact_change
 from verify_repair.memory.summaries import SummaryStore
 from verify_repair.models import ChangeType, stamp
-from verify_repair.policies.base import MaintenanceAction, MaintenancePolicy
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate, MaintenancePolicy
 from verify_repair.retrieval.base import Retriever
 from verify_repair.retrieval.hybrid import HybridRetriever
 from verify_repair.simulator.events import (
@@ -450,12 +450,15 @@ class Simulator:
                 interval is not None
                 and processed_event_count % interval == 0
             ):
-                stale_ids = (
-                    self.summaries.list_stale_summary_ids()
-                )
+                candidates = [
+                    MaintenanceCandidate(summary_id, stale_since)
+                    for summary_id, stale_since in
+                    self.summaries.list_stale_maintenance_candidates()
+                ]
+                stale_ids = {candidate.summary_id for candidate in candidates}
 
                 actions = self.policy.on_maintenance_tick(
-                    stale_ids
+                    candidates
                 )
 
                 action_ids = [
@@ -473,12 +476,10 @@ class Simulator:
                         "maintenance tick targeted a fresh summary"
                     )
 
-                for summary_id, action in actions:
-                    if action != MaintenanceAction.REPAIR:
-                        raise ValueError(
-                            "maintenance tick may only schedule REPAIR"
-                        )
+                if any(action != MaintenanceAction.REPAIR for _, action in actions):
+                    raise ValueError("maintenance tick may only schedule REPAIR")
 
+                for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
                     self.maintenance.repair(
@@ -498,7 +499,7 @@ class Simulator:
                         episode=stale.stale_episode_id,
                         action=action,
                         repair_cost=self.config.repair_cost_units,
-                        maintenance_trigger="periodic_tick",
+                        maintenance_trigger="scheduled_tick",
                         maintenance_tick=processed_event_count,
                     )
 

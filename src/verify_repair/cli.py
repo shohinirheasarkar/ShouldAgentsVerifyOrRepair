@@ -6,6 +6,7 @@ from pathlib import Path
 
 from verify_repair.config import load_config
 from verify_repair.policies.eager_refresh import EagerRefresh
+from verify_repair.policies.oldest_first import OldestFirst
 from verify_repair.policies.periodic_refresh import PeriodicRefresh
 from verify_repair.policies.repair_on_first_access import (
     RepairOnFirstAccess,
@@ -53,6 +54,7 @@ def main() -> None:
             "eager-refresh",
             "repair-on-first-access",
             "periodic-refresh",
+            "oldest-first",
         ],
         required=True,
     )
@@ -62,6 +64,13 @@ def main() -> None:
         type=int,
         default=100,
         help="number of processed events between periodic repairs",
+    )
+
+    run.add_argument(
+        "--repair-slots-per-tick",
+        type=int,
+        default=1,
+        help="maximum summaries repaired per Oldest-First maintenance tick",
     )
 
     run.add_argument(
@@ -107,7 +116,9 @@ def main() -> None:
         "repair-on-first-access": RepairOnFirstAccess,
     }
 
-    if args.policy == "periodic-refresh":
+    if args.policy == "oldest-first":
+        policy = OldestFirst(args.refresh_interval_events, args.repair_slots_per_tick)
+    elif args.policy == "periodic-refresh":
         policy = PeriodicRefresh(
             args.refresh_interval_events
         )

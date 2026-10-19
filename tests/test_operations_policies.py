@@ -8,7 +8,7 @@ from verify_repair.memory.summaries import SummaryStore
 from verify_repair.memory.staleness import mark_stale_from_fact_change
 from verify_repair.maintenance.operations import MaintenanceService
 from verify_repair.models import FactVersionRef, RepairBuildError
-from verify_repair.policies.base import MaintenanceAction
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
@@ -100,7 +100,7 @@ def test_periodic_refresh_policy_returns_expected_actions():
         == MaintenanceAction.VERIFY
     )
 
-    assert policy.on_maintenance_tick(["bob", "alice"]) == [
+    assert policy.on_maintenance_tick([MaintenanceCandidate("bob", T), MaintenanceCandidate("alice", T + timedelta(days=1))]) == [
         ("alice", MaintenanceAction.REPAIR),
         ("bob", MaintenanceAction.REPAIR),
     ]
