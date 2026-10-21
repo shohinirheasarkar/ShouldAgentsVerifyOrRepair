@@ -13,68 +13,91 @@ The source fact history is authoritative. Derived summaries are caches/derived s
 
 ## Read this first
 
-Read the accepted substrate plan and the run instructions:
+1. Read `IMPLEMENTATION_PLAN_PRE_LLM.md` for the accepted substrate's invariants
+   and completed milestones. Do not restart milestones 0–10.
+2. Read `README.md` for current setup, CLI commands, and limitations.
+3. For synthetic workloads, read `docs/synthetic-workload-plan.md`, including
+   its validation audit.
+4. Read `docs/research-grade-memory-handoff.md` when planning future research.
+   It is a roadmap, not authorization to implement all its phases. Its original
+   current-state list and unchecked boxes predate the additional baselines and
+   Step 3; check the implementation and tests before treating an item as missing.
 
-- `IMPLEMENTATION_PLAN_PRE_LLM.md`
-- `README.md`
+The original plan's handoff and scope exclusions describe the original phase.
+Later scoped extensions below are already implemented. Preserve the accepted
+invariants and these extensions; do not revert them to match historical plan
+details. Follow the current user's scope and preserve established repository
+conventions.
 
-The plan records completed milestones and acceptance criteria. Preserve its
-accepted behavior when maintaining the substrate. Do not restart its milestone
-sequence for a new task.
+## Current project state and scope
 
-If repository structure already differs from the suggested structure in the plan, preserve established conventions unless changing them is necessary for correctness.
+The project owner **approved the deterministic pre-LLM substrate**. It includes
+the immutable temporal ledger, derived summaries, exact provenance, dependency
+DAG, staleness propagation, deterministic VERIFY/REPAIR, replayable simulator,
+nominal cost logs, toy YAML inputs, keyword retrieval, RRF/hybrid retrieval,
+and optional BGE-M3 + FAISS retrieval.
 
-## Project state and handoff
+Subsequent scoped work adds three comparison baselines and **Step 3:
+deterministic synthetic workloads**. The current checkout implements five
+policies and generate/save/load/replay CLI commands. The synthetic plan records
+validation through 10,000 memories. Inspect `git status` before editing: work
+may be uncommitted. Implementation and passing tests do not themselves imply
+owner acceptance, a commit, or a push.
 
-The project owner has **approved the deterministic pre-LLM substrate**. All
-milestones 0–10 in `IMPLEMENTATION_PLAN_PRE_LLM.md` are complete. This work is
-ready for the owner's commit and push; approval does not authorize an agent to
-begin the next research phase without a separately scoped request and plan.
+The project owners define **access uncertainty** as uncertainty about how
+frequently future queries access a specific fact or memory component. The
+synthetic generator controls those future counts; prediction remains future
+work. Oldest-First has repair slots per tick, but a shared research budget and
+its horizon are not yet formally defined or implemented.
 
-The accepted substrate includes:
+Work beyond the implemented extensions needs a separately scoped request and
+plan. In particular, do not start these merely because the roadmap lists them:
 
-- immutable temporal fact ledger;
-- derived summary store;
-- exact fact-version provenance;
-- fact-to-summary and summary-to-summary dependencies;
-- staleness propagation;
-- deterministic VERIFY and REPAIR;
-- VerifyOnly and EagerRefresh baselines;
-- deterministic event simulator and logs;
-- toy data/traces;
-- keyword retrieval;
-- RRF/hybrid retrieval abstraction;
-- optional BGE-M3 + FAISS semantic retrieval isolated from core tests.
+- Step 4 / P1 accumulated-threshold policy, P2/P3, or learned demand predictors;
+- hindsight oracle, regret analysis, or shared-budget optimization/scheduling;
+- generative LLM calls, hosted APIs, LLM VERIFY/REPAIR/answer generation, or
+  hosted-LLM synthetic text generation;
+- semantic dirty-bit LLM evaluation or external benchmark integration;
+- research experiments beyond the scoped controlled workload checks, including
+  100K/1M scale runs.
 
-The inspectable toy inputs are `data/toy/facts.yaml`, `summaries.yaml`, and
-`events.yaml`. The simulator uses in-memory SQLite; its database disappears
-after a CLI run. `configs/toy.yaml` contains nominal costs, not measured
-research costs. The keyword and hybrid demos are documented in `README.md`.
+The existing 100/1,000/10,000-memory Step 3 checks are controlled development
+validation. They establish no held-out accuracy, measured model cost, or
+research conclusion.
 
-Latest acceptance checks: on Python 3.11, `pytest -q` passed 23 core tests with
-one optional semantic test deselected. On Python 3.13 with the optional
-dependencies and cached BGE-M3 model, the marked semantic test and hybrid toy
-demo passed. The semantic adapter initializes BGE-M3 before importing FAISS to
-avoid a native crash observed with the opposite import order on macOS.
+## Repository map
 
-## Outside the accepted substrate
+| Location | Responsibility |
+| --- | --- |
+| `src/verify_repair/db.py`, `models.py` | SQLite schema/transactions, domain types, UTC timestamp helpers |
+| `src/verify_repair/memory/` | Immutable ledger, summary/provenance store, dependency DAG, staleness |
+| `src/verify_repair/maintenance/` | Deterministic template builder and VERIFY/REPAIR execution |
+| `src/verify_repair/policies/` | Storage-free decisions and scheduled maintenance hooks |
+| `src/verify_repair/retrieval/` | FTS5 keyword retrieval, RRF/hybrid, optional semantic adapter |
+| `src/verify_repair/simulator/` | Typed events, engine/logging/accounting, toy loader, synthetic workloads |
+| `src/verify_repair/cli.py`, `config.py` | CLI dispatch and toy configuration loading |
+| `tests/` | Flat test layout; use the existing files rather than the original plan's suggested subdirectories |
+| `data/toy/`, `configs/toy.yaml` | Inspectable toy facts/summaries/events and nominal costs |
 
-Do not add these while maintaining this accepted phase or preparing its
-commit. Future work on them needs an explicitly scoped next-phase request:
+CLI replay uses fresh in-memory SQLite; the database disappears at the end of
+the run. Saved workload JSON is input data, not a persisted simulator database.
 
-- generative LLM calls or hosted APIs;
-- Llama/Qwen/vLLM generation;
-- LLM-backed verification or repair;
-- hosted-LLM synthetic data generation;
-- P1, P2, or P3;
-- learned predictors;
-- hindsight oracle;
-- repair-budget scheduling;
-- semantic dirty-bit LLM evaluation;
-- LongMemEval or RealTime QA;
-- 10K/100K/1M research experiments.
+## Policy behavior to preserve
 
-The project owners define “access uncertainty” as uncertainty about how frequently future queries access a specific fact or memory component. This definition does not prescribe a probability model or predictor; neither is implemented in the accepted substrate.
+| CLI policy | Stale query access | Correction / scheduled repair |
+| --- | --- | --- |
+| `verify-only` | VERIFY on every stale access | No repair |
+| `eager-refresh` | Normally already fresh | Repair all affected summaries immediately after a change |
+| `repair-on-first-access` | REPAIR once, then use the persistent fresh summary | No repair until queried |
+| `periodic-refresh` | VERIFY until repaired | Repair all stale summaries at each tick, ordered by summary ID |
+| `oldest-first` | VERIFY until repaired | Repair up to the slot limit, ordered by `(stale_since, summary_id)` ascending |
+
+Scheduled policies default to one tick per **100 processed events**;
+Oldest-First defaults to **one repair slot per tick**. Both settings must be
+positive. Ticks run after the triggering event has been processed. Preserve
+the engine's effective-expiry handling and deterministic event order.
+Policies return actions; the engine validates and executes them. Keep scheduled
+action validation before any repair so invalid batches cannot partly execute.
 
 ## Non-negotiable domain invariants
 
@@ -85,9 +108,10 @@ The project owners define “access uncertainty” as uncertainty about how freq
 5. **VERIFY is non-mutating with respect to summary content/provenance.** It may update counters/logs only.
 6. **REPAIR is persistent.** It updates derived text, provenance, relevant retrieval indexes, and stale state atomically or with explicit consistency handling.
 7. **Policies do not own storage.** Policies return decisions/actions; engine/services execute them.
-8. **Same trace, same config, same seed => same non-wall-clock results.**
+8. **Same trace, same policy/settings, same config, same seed => same non-wall-clock results.**
 9. **Core correctness tests never require network access or model downloads.**
 10. **Toy nominal costs are not research measurements.**
+11. **Future demand is evaluator-only.** Policies must not receive synthetic group labels, future-access counts, or future events.
 
 ## Temporal semantics
 
@@ -103,44 +127,128 @@ A temporary exception must be able to expire so the underlying prior value becom
 
 Retractions should be represented with an immutable tombstone/event, not deletion.
 
+Public timestamps must be timezone-aware; storage normalizes them to UTC ISO
+8601. A bounded exception overrides its permanent base while active; a later
+permanent event takes precedence. Effective exception expiry is a simulator
+transition that can mark dependents stale and trigger maintenance. Preserve
+historical resolution and deterministic `(timestamp, sequence_number)` ordering.
+
 ## Stale episodes
 
-A relevant correction starts a new stale episode for an affected summary. If another relevant correction happens before repair, it starts a new episode/reset for that summary. One correction event reaching a summary through multiple dependency paths must not reset it multiple times.
+A relevant correction starts a new stale episode for each affected summary.
+Another correction before repair changes `stale_episode_id` and resets
+`queries_this_episode` and `verification_cost_this_episode`. One event reaching
+a summary through multiple dependency paths must reset it only once.
+
+**`stale_since` is the start of the uninterrupted stale period**, not the start
+of the latest episode. Further corrections preserve it until REPAIR clears it;
+a later fresh-to-stale transition starts a new stale period. This implemented
+Oldest-First behavior supersedes the original plan's `stale_since` reset detail.
+Repairing a parent must not silently clear its stale descendants.
+
+## Synthetic workload contract
+
+- One memory is one independent entity summary over three initial facts;
+  entities are people, projects, or places.
+- Each memory gets exactly one correction; all corrections precede all queries.
+  Queries are interleaved with a local seeded RNG, stable IDs, and fixed UTC times.
+- Inclusive future-query bands are cold **0–2**, warm **3–10**, hot **11–50**.
+  Defaults balance the groups, assigning any remainder to cold then warm.
+  Explicit counts must sum to the memory count; equal range endpoints select
+  exact query counts, including zero for cold memories.
+- `synthetic-v1` JSON stores the resolved configuration, initial facts,
+  templates/source slots, correction/query events, and evaluator-only demands.
+  Identical configuration and seed must produce byte-identical artifacts.
+- Validate workload structure, unique IDs/order, source references, correction
+  coverage, and exact access counts before writing a file or opening SQLite.
+  Generation refuses to overwrite an existing artifact. Replay/logging must
+  preserve saved workload inputs, including through path aliases/hard links.
+- Load initial state through the existing APIs with exact v1 provenance; replay
+  the same saved events through the existing simulator for every policy.
+- Synthetic replay uses keyword retrieval and a unique stable entity name per
+  query so retrieval reaches the intended memory before and after repair.
+  Hybrid retrieval is available in the toy demo. Do not add retrieval uncertainty,
+  repeated corrections, dependency fan-out, or new workload regimes incidentally.
+- Keep generated workloads and logs in temporary/output directories outside Git.
+
+## Environment and commands
+
+Support **Python 3.11+** as declared in `pyproject.toml`; keep code compatible
+with 3.11. Reuse a suitable existing virtual environment. In this workspace,
+`.venv311` has been used for core checks and `.venv` for optional semantic
+checks; verify their interpreters/dependencies rather than assuming portability.
+
+Run from the repository root using the same interpreter for installation,
+tests, and CLI:
+
+```bash
+python -m pip install '.[dev]'
+python -m pytest -q
+python -m verify_repair.cli --help
+python -m verify_repair.cli run-toy --policy verify-only
+python -m verify_repair.cli run-toy --policy eager-refresh
+python -m verify_repair.cli run-toy --policy repair-on-first-access
+python -m verify_repair.cli run-toy --policy periodic-refresh --refresh-interval-events 100
+python -m verify_repair.cli run-toy --policy oldest-first --refresh-interval-events 100 --repair-slots-per-tick 1
+```
+
+Editable installation works on normal setups. On this macOS workspace hidden
+`.pth` files have caused editable imports to fail; see `README.md`. After code
+changes, reinstall a regular install before CLI checks, or use `PYTHONPATH=src`
+explicitly to run checkout code. Pytest already sets `pythonpath = ["src"]`.
+
+For a synthetic smoke check, use a new output filename each time:
+
+```bash
+python -m verify_repair.cli generate-synthetic --memories 100 --seed 12345 --output /tmp/workload-100.json
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy repair-on-first-access
+```
+
+Use `--jsonl PATH` for structured logs and `--verbose` for transitions. Preserve
+the stable log schema, trace/config hashes, and nominal cost accounting. Record
+policy schedule options alongside seed/config when reporting replay commands.
 
 ## Testing expectations
 
-Run the repository's established checks for substrate changes:
+Run focused tests for changed behavior, then the complete core suite:
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
-If optional semantic dependencies and BGE-M3 are available, also run:
+This is equivalent to `pytest -q` in the active environment. Report the actual
+result and interpreter; historical test counts in plans are not current gates.
+Every invariant or bug fix must have a regression test. Documentation-only
+changes do not need new tests that merely mirror the documentation.
+
+| Tests | Coverage to retain |
+| --- | --- |
+| `test_ledger.py`, `test_more_invariants.py` | Immutability, temporal resolution, provenance, propagation, rollback |
+| `test_summaries_staleness.py` | Exact provenance, reverse lookup, cycle rejection, episode resets |
+| `test_operations_policies.py`, `test_simulator.py` | VERIFY non-mutation, atomic REPAIR/index updates, baselines, canonical scenario, deterministic replay |
+| `test_oldest_first.py` | Stale-period age, ranking/ties, repair limits, scheduled action validation |
+| `test_hybrid.py` | Exact RRF arithmetic and hybrid ranking with fake semantic retrieval |
+| `test_synthetic.py`, `test_cli.py` | Seed isolation, artifact validation/round trips, demand isolation, retrieval, replay, CLI input preservation |
+| `test_bootstrap.py` | SQLite foreign keys/schema |
+| `test_semantic_optional.py` | Opt-in live BGE-M3/FAISS integration |
+
+If optional semantic dependencies and cached BGE-M3 are available, also run:
 
 ```bash
-RUN_SEMANTIC=1 pytest -o addopts='' -m semantic
-python -m verify_repair.cli run-toy --policy eager-refresh --retrieval hybrid
+RUN_SEMANTIC=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -o addopts='' -m semantic
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m verify_repair.cli run-toy --policy eager-refresh --retrieval hybrid
 ```
 
-The marked test is excluded from ordinary `pytest -q`. Run commands from the
-repository root in a virtual environment where the package is installed.
+Core pytest excludes the semantic marker and must remain independent of model
+downloads. Do not install/download large models merely for an unrelated change;
+report optional checks as unrun when unavailable. A skipped semantic test is not
+a passed integration check. Use the offline flags with an existing cache.
 
-Every invariant or bug fix must have a regression test.
-
-Important test groups:
-
-- immutable ledger;
-- temporal resolution;
-- exact provenance/reverse index;
-- dependency cycle rejection;
-- transitive staleness propagation;
-- VERIFY non-mutation;
-- REPAIR atomicity and index update;
-- VerifyOnly/EagerRefresh behavior;
-- deterministic simulator replay;
-- keyword retrieval;
-- RRF calculation;
-- canonical end-to-end correction scenario.
+Initialize BGE-M3 **before importing FAISS**: reversing this native-library
+order caused a macOS crash. Semantic repair currently rebuilds/re-embeds the
+full index; do not describe it as incremental. On update failure, SQLite rolls
+back and the vector index is rebuilt from committed summaries. Preserve this
+consistency handling and its regression coverage.
 
 ## Canonical sanity scenario
 
@@ -157,10 +265,13 @@ Expected:
 - summary becomes stale;
 - VerifyOnly sees Boston as current evidence but stored summary remains Maryland/stale;
 - EagerRefresh repairs the summary to Boston, updates provenance to v2, and later queries require no maintenance.
+- RepairOnFirstAccess leaves it stale until retrieval, repairs it once, and
+  incurs no later maintenance until another relevant change; an unqueried
+  memory incurs no repair.
 
 ## Coding guidance
 
-- Target Python 3.11.
+- Preserve Python 3.11 compatibility.
 - Prefer simple, explicit code over premature abstractions.
 - Keep policy, storage, retrieval, and simulator concerns separated.
 - Use SQLite transactions for multi-step state changes.
@@ -168,26 +279,33 @@ Expected:
 - Do not add a dependency solely to avoid writing a small, clear function.
 - Use stable IDs and deterministic tie-breaking in tests/retrieval.
 - Fail loudly on invariant violations; do not silently repair corrupt state.
+- Add concise module docstrings describing purpose, inputs/outputs, and usage;
+  document CLI/dependency changes in `README.md`.
 - Never commit secrets, API keys, generated model caches, or large experiment artifacts.
 
 ## Before modifying code
 
-1. Read `IMPLEMENTATION_PLAN_PRE_LLM.md`.
-2. Inspect the current repository and existing tests.
-3. Determine whether the request maintains the accepted substrate or starts a separately authorized phase.
+1. Follow the reading order above and identify the relevant scoped plan.
+2. Inspect `git status`, the implementation, and existing tests; preserve unrelated work.
+3. Determine whether the request maintains existing behavior or authorizes a new phase.
 4. Preserve existing public APIs unless a change is necessary; if changed, update all tests/docs.
 
 ## Before declaring a task complete
 
 1. Run relevant unit tests.
-2. Run `pytest -q`.
-3. For substrate maintenance, confirm no generative LLM dependency/call was introduced.
+2. Run `python -m pytest -q`; run available optional checks as described above.
+3. For deterministic maintenance, confirm no generative LLM dependency/call was introduced.
 4. Confirm fact-ledger immutability still holds.
 5. Confirm deterministic replay tests still hold.
-6. Summarize changed files, tests run, and any deviation from the execution plan.
+6. For workload/policy changes, confirm identical saved inputs across policies and no future-demand leakage.
+7. Check `git diff --check` and review the final diff for unrelated changes.
+8. Summarize changed files, tests/results, optional checks skipped, limitations,
+   and any deviation from the scoped plan. Keep development validation distinct
+   from research findings and owner approval. Leave commit/push to the user
+   unless requested; major PRs should receive review from a teammate.
 
-## Accepted phase boundary
+## Phase boundary
 
-Every checkbox in `IMPLEMENTATION_PLAN_PRE_LLM.md` Section 17 was satisfied and
-the project owner approved the deterministic pre-LLM substrate. Stop at this
-handoff for the current push; subsequent research work needs its own scope.
+The accepted original milestone plan remains complete. Maintain the implemented
+baselines and Step 3 within the requested task; start subsequent research work
+only under its own scope. Updating this file does not authorize the next phase.

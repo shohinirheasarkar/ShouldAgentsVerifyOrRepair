@@ -3,7 +3,7 @@
 CMSC 848N · Fall 2026 · [GitHub repository](https://github.com/shohinirheasarkar/ShouldAgentsVerifyOrRepair)
 
 ## Project intro
-Long-running agents may retain summaries built from facts that later change. When a query touches a summary flagged as stale, the agent can **verify** the current source for this answer or **repair** the stored summary for later use. We aim to compare decision policies under limited cost and uncertain future reuse. The proposal suggests a controlled event stream, simple fixed memory components, and comparisons to verify-only, eager repair, first-access repair, a threshold policy, and a hindsight oracle. **Access uncertainty** means uncertainty about how frequently future queries will access a specific fact or memory component. A shared budget still needs a precise definition. This pre-LLM implementation does not model future query frequency.
+Long-running agents may retain summaries built from facts that later change. When a query touches a summary flagged as stale, the agent can **verify** the current source for this answer or **repair** the stored summary for later use. We aim to compare decision policies under limited cost and uncertain future reuse. The proposal suggests a controlled event stream, simple fixed memory components, and comparisons to verify-only, eager repair, first-access repair, a threshold policy, and a hindsight oracle. **Access uncertainty** means uncertainty about how frequently future queries will access a specific fact or memory component. A shared budget still needs a precise definition. The synthetic generator controls future question counts; predicting those counts remains future work.
 
 ## How to navigate this repo
 
@@ -17,12 +17,14 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | [docs/final-report.md](docs/final-report.md) | Final paper checklist | Pending |
 | [docs/related-works.md](docs/related-works.md) | Papers to verify and annotated notes | In progress |
 | [docs/research-grade-memory-handoff.md](docs/research-grade-memory-handoff.md) | Roadmap from the deterministic MVP to a research-grade memory experiment | Active handoff |
+| [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md) | Scoped Step 3 implementation and validation plan | Implemented |
 
 
 ## How to obtain, set up, and use the code
 
-The active implementation is the deterministic pre-LLM phase in
-[`IMPLEMENTATION_PLAN_PRE_LLM.md`](IMPLEMENTATION_PLAN_PRE_LLM.md). It uses
+The shared substrate is the accepted deterministic pre-LLM phase in
+[`IMPLEMENTATION_PLAN_PRE_LLM.md`](IMPLEMENTATION_PLAN_PRE_LLM.md), extended
+with the requested simple baselines and Step 3 synthetic generator. It uses
 SQLite for immutable fact versions and derived summaries, FTS5 for keyword
 retrieval, and YAML for the inspectable toy trace. Timestamps at public APIs
 are timezone-aware and normalized to UTC ISO 8601 in SQLite. Retractions are
@@ -96,6 +98,74 @@ beginning of the uninterrupted stale period, even across further corrections.
 ```bash
 python -m verify_repair.cli run-toy --policy oldest-first --refresh-interval-events 100 --repair-slots-per-tick 1
 ```
+
+## Synthetic workloads (Step 3)
+
+The generator creates people, projects, and places, with **one memory = one
+summary over three initial facts**. Every memory receives one correction to a
+source fact. All corrections precede all questions, creating one controlled
+stale episode per memory; questions are then interleaved using a local seeded
+random generator. IDs and UTC timestamps are deterministic.
+
+| Group | Future questions per memory, inclusive |
+| --- | --- |
+| Cold | 0–2 |
+| Warm | 3–10 |
+| Hot | 11–50 |
+
+The default population is balanced, with any remainder assigned to cold then
+warm: 100 memories yield 34 cold, 33 warm, and 33 hot. Counts are sampled
+uniformly within each group's range. Use fresh output filenames: generation
+refuses to overwrite an existing artifact. No additional dependencies are
+needed; reinstall the package after editing code as described above.
+
+Start with 100 memories, replay them, then increase to 1,000 and 10,000:
+
+```bash
+python -m verify_repair.cli generate-synthetic --memories 100 --seed 12345 --output /tmp/workload-100.json
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy verify-only
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy repair-on-first-access
+
+python -m verify_repair.cli generate-synthetic --memories 1000 --seed 12345 --output /tmp/workload-1000.json
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-1000.json --policy repair-on-first-access
+
+python -m verify_repair.cli generate-synthetic --memories 10000 --seed 12345 --output /tmp/workload-10000.json
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-10000.json --policy repair-on-first-access
+```
+
+Choose group sizes and query ranges explicitly when needed. For exact counts,
+set equal endpoints; the following creates 50 never-accessed cold memories,
+30 warm memories with seven questions each, and 20 hot memories with 50 each:
+
+```bash
+python -m verify_repair.cli generate-synthetic --memories 100 --seed 12345 --group-counts 50 30 20 --cold-queries 0 0 --warm-queries 7 7 --hot-queries 50 50 --output /tmp/workload-exact.json
+```
+
+Group sizes must be nonnegative and sum to `--memories`; query ranges must
+stay within the bands above. The versioned JSON artifact contains the resolved
+configuration, initial facts, summary templates/source slots, correction/query
+events, and evaluator-only `demands` (group labels and exact future counts).
+The generator prints the artifact's SHA-256. Repeating the same seed and
+configuration produces byte-identical artifacts. Saving and loading validate
+group/access counts, source references, unique IDs, and event ordering. Replay
+loads the saved inputs into fresh in-memory SQLite, builds summaries with exact
+v1 provenance, and uses the existing simulator; the saved workload is never
+changed by repair.
+
+Synthetic replay uses keyword retrieval and questions containing a unique,
+stable entity name, so each question reaches its intended memory before and
+after repair. This isolates maintenance decisions from retrieval uncertainty.
+All five existing policies can replay the same artifact. Policies receive
+neither demand labels nor future counts. `--jsonl PATH` saves the existing
+structured logs; `--refresh-interval-events` and `--repair-slots-per-tick`
+retain their existing meanings. Hybrid retrieval remains available in the toy
+demo.
+
+These are controlled development workloads with independent memories and one
+correction each. They are not a held-out benchmark or natural-language accuracy
+evaluation. Costs remain nominal. P1, demand prediction, repeated corrections,
+and dependency fan-out are outside this Step 3 change. The implementation and
+acceptance plan is [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md).
 
 ## Tutorial notebooks
 - to be added -
