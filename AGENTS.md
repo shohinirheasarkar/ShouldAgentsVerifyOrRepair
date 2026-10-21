@@ -38,7 +38,8 @@ nominal cost logs, toy YAML inputs, keyword retrieval, RRF/hybrid retrieval,
 and optional BGE-M3 + FAISS retrieval.
 
 Subsequent scoped work adds three comparison baselines and **Step 3:
-deterministic synthetic workloads**. The current checkout implements five
+deterministic synthetic workloads**, followed by **Step 4: P1 threshold
+maintenance** (see `docs/p1-threshold-plan.md`). The current checkout implements six
 policies and generate/save/load/replay CLI commands. The synthetic plan records
 validation through 10,000 memories. Inspect `git status` before editing: work
 may be uncommitted. Implementation and passing tests do not themselves imply
@@ -53,7 +54,7 @@ its horizon are not yet formally defined or implemented.
 Work beyond the implemented extensions needs a separately scoped request and
 plan. In particular, do not start these merely because the roadmap lists them:
 
-- Step 4 / P1 accumulated-threshold policy, P2/P3, or learned demand predictors;
+- P2/P3 or learned demand predictors;
 - hindsight oracle, regret analysis, or shared-budget optimization/scheduling;
 - generative LLM calls, hosted APIs, LLM VERIFY/REPAIR/answer generation, or
   hosted-LLM synthetic text generation;
@@ -91,6 +92,7 @@ the run. Saved workload JSON is input data, not a persisted simulator database.
 | `repair-on-first-access` | REPAIR once, then use the persistent fresh summary | No repair until queried |
 | `periodic-refresh` | VERIFY until repaired | Repair all stale summaries at each tick, ordered by summary ID |
 | `oldest-first` | VERIFY until repaired | Repair up to the slot limit, ordered by `(stale_since, summary_id)` ascending |
+| `p1` | REPAIR when the next VERIFY would meet/exceed one repair's cost; otherwise VERIFY | No background repair; reset count on relevant changes or repair |
 
 Scheduled policies default to one tick per **100 processed events**;
 Oldest-First defaults to **one repair slot per tick**. Both settings must be
@@ -98,6 +100,15 @@ positive. Ticks run after the triggering event has been processed. Preserve
 the engine's effective-expiry handling and deterministic event order.
 Policies return actions; the engine validates and executes them. Keep scheduled
 action validation before any repair so invalid batches cannot partly execute.
+
+P1 uses fixed nominal run costs and the persisted successful-verification count
+in `queries_this_episode`. The engine supplies an immutable `StaleAccessContext`
+through the stale-access hook's `context` keyword. Policies receive no future
+demand. For positive costs, repair on access `ceil(repair / verify)`, computed
+using exact decimal-value ratios. Free repair wins immediately; free verification
+with positive repair cost never switches. Both replay commands support
+`--verify-cost` / `--repair-cost` and log the resolved costs. Variable costs within
+an episode remain outside scope.
 
 ## Non-negotiable domain invariants
 
@@ -190,6 +201,7 @@ python -m verify_repair.cli run-toy --policy eager-refresh
 python -m verify_repair.cli run-toy --policy repair-on-first-access
 python -m verify_repair.cli run-toy --policy periodic-refresh --refresh-interval-events 100
 python -m verify_repair.cli run-toy --policy oldest-first --refresh-interval-events 100 --repair-slots-per-tick 1
+python -m verify_repair.cli run-toy --policy p1
 ```
 
 Editable installation works on normal setups. On this macOS workspace hidden
@@ -227,6 +239,7 @@ changes do not need new tests that merely mirror the documentation.
 | `test_summaries_staleness.py` | Exact provenance, reverse lookup, cycle rejection, episode resets |
 | `test_operations_policies.py`, `test_simulator.py` | VERIFY non-mutation, atomic REPAIR/index updates, baselines, canonical scenario, deterministic replay |
 | `test_oldest_first.py` | Stale-period age, ranking/ties, repair limits, scheduled action validation |
+| `test_threshold.py` | P1 exact switching, cost boundaries, episode resets, expiry, independent counts, rollback |
 | `test_hybrid.py` | Exact RRF arithmetic and hybrid ranking with fake semantic retrieval |
 | `test_synthetic.py`, `test_cli.py` | Seed isolation, artifact validation/round trips, demand isolation, retrieval, replay, CLI input preservation |
 | `test_bootstrap.py` | SQLite foreign keys/schema |
@@ -307,5 +320,5 @@ Expected:
 ## Phase boundary
 
 The accepted original milestone plan remains complete. Maintain the implemented
-baselines and Step 3 within the requested task; start subsequent research work
+baselines, Step 3, and Step 4 within the requested task; start subsequent research work
 only under its own scope. Updating this file does not authorize the next phase.

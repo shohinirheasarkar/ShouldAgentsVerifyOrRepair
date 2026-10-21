@@ -63,3 +63,51 @@ def test_controlled_synthetic_replay_requires_keyword_retrieval(tmp_path, capsys
               "--policy", "verify-only", "--retrieval", "hybrid"])
     assert error.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+def test_p1_toy_cost_overrides_are_used_and_logged(tmp_path, capsys):
+    log = tmp_path / "toy.jsonl"
+    main(["run-toy", "--policy", "p1", "--verify-cost", "0.1", "--repair-cost", "0.3", "--jsonl", str(log)])
+    assert "policy=p1" in capsys.readouterr().out
+    rows = [json.loads(line) for line in log.read_text().splitlines()]
+    alice = [row for row in rows if row["query_id"] in ("q1", "q2", "q3")]
+    assert [row["action"] for row in alice] == ["VERIFY", "VERIFY", "REPAIR"]
+    assert all(row["config_snapshot"]["verify_cost_units"] == 0.1
+               and row["config_snapshot"]["repair_cost_units"] == 0.3 for row in rows)
+    main(["run-toy", "--policy", "p1", "--jsonl", str(log)])
+    default_rows = [json.loads(line) for line in log.read_text().splitlines()]
+    assert rows[0]["config_hash"] != default_rows[0]["config_hash"]
+    assert rows[0]["run_id"] != default_rows[0]["run_id"]
+    assert rows[0]["trace_hash"] == default_rows[0]["trace_hash"]
+
+
+def test_p1_saved_synthetic_cli_replay(tmp_path, capsys):
+    path, log = tmp_path / "inputs.json", tmp_path / "run.jsonl"
+    main(["generate-synthetic", "--memories", "3", "--group-counts", "1", "1", "1",
+          "--cold-queries", "0", "0", "--warm-queries", "3", "3", "--hot-queries", "11", "11",
+          "--output", str(path)])
+    before = path.read_bytes()
+    args = ["run-synthetic", "--workload", str(path), "--policy", "p1", "--verify-cost", "2",
+            "--repair-cost", "5", "--jsonl", str(log)]
+    main(args)
+    output = capsys.readouterr().out
+    assert "verifications=4 repairs=2 nominal_verify_cost=8 nominal_repair_cost=10 stale_source_uses=0" in output
+    first = log.read_bytes()
+    main(args)
+    assert log.read_bytes() == first
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("option", ["--verify-cost", "--repair-cost"])
+@pytest.mark.parametrize("value", ["-1", "nan", "inf", "-inf"])
+def test_cli_rejects_invalid_costs_before_loading_database(tmp_path, monkeypatch, capsys, option, value):
+    def unexpected_load(*args):
+        pytest.fail("invalid costs must fail before opening SQLite")
+
+    monkeypatch.setattr("verify_repair.cli.load_toy", unexpected_load)
+    log = tmp_path / "invalid.jsonl"
+    with pytest.raises(SystemExit) as error:
+        main(["run-toy", "--policy", "p1", f"{option}={value}", "--jsonl", str(log)])
+    assert error.value.code == 2
+    assert "finite and nonnegative" in capsys.readouterr().err
+    assert not log.exists()

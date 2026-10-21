@@ -13,6 +13,19 @@ class MaintenanceCandidate:
     stale_since: datetime
 
 
+@dataclass(frozen=True)
+class StaleAccessContext:
+    """Successful VERIFY count before this access and fixed nominal run costs.
+
+    The engine reads the count from SQLite's queries_this_episode. Policies
+    receive no storage handle, evaluator labels, or future-access information.
+    """
+
+    verifications_this_episode: int
+    verify_cost_units: float
+    repair_cost_units: float
+
+
 class MaintenanceAction(StrEnum):
     NO_OP = "NO_OP"
     VERIFY = "VERIFY"
@@ -32,6 +45,8 @@ class MaintenancePolicy(Protocol):
         self,
         summary_id: str,
         query: str,
+        *,
+        context: StaleAccessContext | None = None,
     ) -> MaintenanceAction: ...
 
     def on_maintenance_tick(

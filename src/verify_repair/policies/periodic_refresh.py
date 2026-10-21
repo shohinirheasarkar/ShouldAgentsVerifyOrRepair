@@ -1,6 +1,6 @@
 """Verify stale accesses and repair stale summaries on scheduled ticks."""
 
-from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate, StaleAccessContext
 
 
 class PeriodicRefresh:
@@ -23,6 +23,8 @@ class PeriodicRefresh:
         self,
         summary_id: str,
         query: str,
+        *,
+        context: StaleAccessContext | None = None,
     ) -> MaintenanceAction:
         return MaintenanceAction.VERIFY
 

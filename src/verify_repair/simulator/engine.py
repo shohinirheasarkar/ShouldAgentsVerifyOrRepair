@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from math import isfinite
 from dataclasses import asdict, dataclass
 from datetime import timedelta
 
@@ -13,7 +14,9 @@ from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.staleness import mark_stale_from_fact_change
 from verify_repair.memory.summaries import SummaryStore
 from verify_repair.models import ChangeType, stamp
-from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate, MaintenancePolicy
+from verify_repair.policies.base import (
+    MaintenanceAction, MaintenanceCandidate, MaintenancePolicy, StaleAccessContext,
+)
 from verify_repair.retrieval.base import Retriever
 from verify_repair.retrieval.hybrid import HybridRetriever
 from verify_repair.simulator.events import (
@@ -29,6 +32,11 @@ class RunConfig:
     dataset_id: str = "toy-v1"
     verify_cost_units: float = 1.0
     repair_cost_units: float = 5.0
+
+    def __post_init__(self) -> None:
+        for cost in (self.verify_cost_units, self.repair_cost_units):
+            if not isfinite(cost) or cost < 0:
+                raise ValueError("nominal costs must be finite and nonnegative")
 
     def digest(self) -> str:
         encoded = json.dumps(asdict(self), sort_keys=True).encode()
@@ -367,6 +375,11 @@ class Simulator:
                         action = self.policy.on_stale_access(
                             hit.summary_id,
                             event.query_text,
+                            context=StaleAccessContext(
+                                verifications_this_episode=summary.queries_this_episode,
+                                verify_cost_units=self.config.verify_cost_units,
+                                repair_cost_units=self.config.repair_cost_units,
+                            ),
                         )
 
                         if action == MaintenanceAction.VERIFY:

@@ -16,6 +16,7 @@ import sys
 import pytest
 
 from verify_repair.policies.eager_refresh import EagerRefresh
+from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
 from verify_repair.policies.oldest_first import OldestFirst
 from verify_repair.policies.periodic_refresh import PeriodicRefresh
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
@@ -119,7 +120,7 @@ def test_exact_counts_including_never_accessed_memories():
 
 
 @pytest.mark.parametrize("policy_factory", [VerifyOnly, EagerRefresh, RepairOnFirstAccess,
-                                            PeriodicRefresh, OldestFirst])
+                                            PeriodicRefresh, OldestFirst, AccumulatedThreshold])
 def test_100_memory_replay_exact_demand_current_evidence_and_immutable_history(policy_factory):
     workload = generate_synthetic()
     original_events = list(workload.events)
@@ -153,11 +154,13 @@ def test_100_memory_replay_exact_demand_current_evidence_and_immutable_history(p
             assert [h.summary_id for h in retriever.search(event.query_text, 2)] == [targets[event.expected_fact_ids[0]]]
         for demand in workload.demands:
             summary = store.get_summary(demand.summary_id)
-            if policy_factory is VerifyOnly or (policy_factory is RepairOnFirstAccess and demand.future_queries == 0):
+            if (policy_factory is VerifyOnly
+                    or (policy_factory is RepairOnFirstAccess and demand.future_queries == 0)
+                    or (policy_factory is AccumulatedThreshold and demand.future_queries < 5)):
                 assert summary.is_stale
                 assert summary.text == texts[demand.summary_id]
                 assert store.get_source_facts(demand.summary_id) == sources[demand.summary_id]
-            elif policy_factory in (EagerRefresh, RepairOnFirstAccess):
+            elif policy_factory in (EagerRefresh, RepairOnFirstAccess, AccumulatedThreshold):
                 assert not summary.is_stale
                 assert summary.text != texts[demand.summary_id]
                 refs = store.get_source_facts(demand.summary_id)
@@ -169,6 +172,9 @@ def test_100_memory_replay_exact_demand_current_evidence_and_immutable_history(p
         elif policy_factory is RepairOnFirstAccess:
             assert result.repairs == sum(d.future_queries > 0 for d in workload.demands)
             assert result.verifications == 0
+        elif policy_factory is AccumulatedThreshold:
+            assert result.repairs == sum(d.future_queries >= 5 for d in workload.demands)
+            assert result.verifications == sum(min(d.future_queries, 4) for d in workload.demands)
         assert workload.events == original_events
     finally:
         db.close()
@@ -302,7 +308,7 @@ def test_every_future_query_count_reaches_its_memory(count):
                              **{f"{group}_queries": (count, count)})
     workload = generate_synthetic(config)
     assert len(assert_workload_shape(workload)) == count
-    for policy in (VerifyOnly(), EagerRefresh(), RepairOnFirstAccess()):
+    for policy in (VerifyOnly(), EagerRefresh(), RepairOnFirstAccess(), AccumulatedThreshold()):
         db, ledger, store, retriever, events = load_synthetic(workload)
         try:
             result = Simulator(ledger, store, retriever, policy, synthetic_run_config(workload)).run(events)
@@ -314,6 +320,11 @@ def test_every_future_query_count_reaches_its_memory(count):
                        for row in rows)
             if isinstance(policy, VerifyOnly):
                 assert result.repairs == 0 and result.verifications == count
+            elif isinstance(policy, AccumulatedThreshold):
+                assert result.repairs == int(count >= 5)
+                assert result.verifications == min(count, 4)
+                assert [row["action"] for row in rows] == (
+                    ["VERIFY"] * count if count < 5 else ["VERIFY"] * 4 + ["REPAIR"] + ["NO_OP"] * (count - 5))
             else:
                 assert result.repairs == (1 if isinstance(policy, EagerRefresh) else int(count > 0))
                 assert result.verifications == 0
@@ -332,3 +343,55 @@ def test_cli_generation_is_reproducible_across_process_hash_seeds(tmp_path):
                        cwd=tmp_path, env=env, check=True, capture_output=True, text=True)
         hashes.append(hashlib.sha256(path.read_bytes()).hexdigest())
     assert len(set(hashes)) == 1
+
+
+@pytest.mark.parametrize("verify,repair,threshold", [(1, 5, 5), (2, 5, 3), (0.1, 1, 10),
+                                                     (0, 5, None), (0, 0, 1)])
+def test_p1_saved_inputs_costs_replay_and_context_isolation(tmp_path, verify, repair, threshold):
+    from dataclasses import fields
+
+    from verify_repair.policies.base import StaleAccessContext
+
+    class ObservedP1(AccumulatedThreshold):
+        def on_stale_access(self, summary_id, query, *, context=None):
+            assert isinstance(context, StaleAccessContext)
+            assert {field.name for field in fields(context)} == {
+                "verifications_this_episode", "verify_cost_units", "repair_cost_units",
+            }
+            return super().on_stale_access(summary_id, query, context=context)
+
+    path = tmp_path / "inputs.json"
+    generate_synthetic().write(path)
+    original = path.read_bytes()
+    policy = ObservedP1()
+    runs = []
+    for _ in range(2):
+        workload = read_synthetic(path)
+        db, ledger, store, retriever, events = load_synthetic(workload)
+        try:
+            config = replace(synthetic_run_config(workload), verify_cost_units=verify, repair_cost_units=repair)
+            result = Simulator(ledger, store, retriever, policy, config).run(events)
+            runs.append(result)
+            for demand in workload.demands:
+                count = demand.future_queries
+                expected = (["VERIFY"] * count if threshold is None or count < threshold else
+                            ["VERIFY"] * (threshold - 1) + ["REPAIR"] + ["NO_OP"] * (count - threshold))
+                rows = [row for row in result.logs if row["summary_id"] == demand.summary_id
+                        and row["event_type"] == "query"]
+                assert [row["action"] for row in rows] == expected
+                assert all(row["required_fact_current"] for row in rows)
+            assert result.cumulative_verify_cost == pytest.approx(result.verifications * verify)
+            assert result.cumulative_repair_cost == pytest.approx(result.repairs * repair)
+            assert result.stale_source_uses == 0
+            baseline_db, baseline_ledger, baseline_store, baseline_retriever, baseline_events = load_synthetic(workload)
+            try:
+                baseline = Simulator(baseline_ledger, baseline_store, baseline_retriever, VerifyOnly(), config).run(baseline_events)
+                assert {row["trace_hash"] for row in result.logs} == {row["trace_hash"] for row in baseline.logs}
+                assert result.logs[0].keys() == baseline.logs[0].keys()
+            finally:
+                baseline_db.close()
+        finally:
+            db.close()
+    assert runs[0] == runs[1]
+    assert path.read_bytes() == original
+    assert vars(policy) == {}

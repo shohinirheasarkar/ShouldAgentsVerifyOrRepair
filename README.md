@@ -18,13 +18,15 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | [docs/related-works.md](docs/related-works.md) | Papers to verify and annotated notes | In progress |
 | [docs/research-grade-memory-handoff.md](docs/research-grade-memory-handoff.md) | Roadmap from the deterministic MVP to a research-grade memory experiment | Active handoff |
 | [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md) | Scoped Step 3 implementation and validation plan | Implemented |
+| [docs/p1-threshold-plan.md](docs/p1-threshold-plan.md) | Scoped Step 4 threshold convention and validation | Implemented |
 
 
 ## How to obtain, set up, and use the code
 
 The shared substrate is the accepted deterministic pre-LLM phase in
 [`IMPLEMENTATION_PLAN_PRE_LLM.md`](IMPLEMENTATION_PLAN_PRE_LLM.md), extended
-with the requested simple baselines and Step 3 synthetic generator. It uses
+with the requested simple baselines, Step 3 synthetic generator, and Step 4 P1
+threshold policy. It uses
 SQLite for immutable fact versions and derived summaries, FTS5 for keyword
 retrieval, and YAML for the inspectable toy trace. Timestamps at public APIs
 are timezone-aware and normalized to UTC ISO 8601 in SQLite. Retractions are
@@ -45,6 +47,7 @@ python -m verify_repair.cli --help
 python -m verify_repair.cli run-toy --policy verify-only
 python -m verify_repair.cli run-toy --policy eager-refresh
 python -m verify_repair.cli run-toy --policy repair-on-first-access
+python -m verify_repair.cli run-toy --policy p1
 ```
 
 An editable install (`python -m pip install -e '.[dev]'`) also works on normal
@@ -155,7 +158,7 @@ changed by repair.
 Synthetic replay uses keyword retrieval and questions containing a unique,
 stable entity name, so each question reaches its intended memory before and
 after repair. This isolates maintenance decisions from retrieval uncertainty.
-All five existing policies can replay the same artifact. Policies receive
+All six policies, including P1, can replay the same artifact. Policies receive
 neither demand labels nor future counts. `--jsonl PATH` saves the existing
 structured logs; `--refresh-interval-events` and `--repair-slots-per-tick`
 retain their existing meanings. Hybrid retrieval remains available in the toy
@@ -163,9 +166,58 @@ demo.
 
 These are controlled development workloads with independent memories and one
 correction each. They are not a held-out benchmark or natural-language accuracy
-evaluation. Costs remain nominal. P1, demand prediction, repeated corrections,
+evaluation. Costs remain nominal. Demand prediction, repeated corrections,
 and dependency fan-out are outside this Step 3 change. The implementation and
 acceptance plan is [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md).
+
+## P1 threshold maintenance (Step 4)
+
+P1 (`--policy p1`, Python class `AccumulatedThreshold`) verifies a stale summary
+until the next verification would bring episode spending to at least one repair.
+It then repairs **instead of verifying**. With verification cost 1 and repair
+cost 5, questions 1–4 verify, question 5 repairs, and later questions use the
+fresh summary without maintenance. Each summary has its own counter. Another
+relevant correction or effective exception expiry resets the counter; successful
+repair resets it and clears staleness. Unqueried stale memories are not repaired.
+
+For fixed positive costs, the repair question is `ceil(repair / verify)`:
+
+| Verification cost | Repair cost | Repair question |
+| --- | --- | --- |
+| 1 | 5 | 5 |
+| 2 | 5 | 3 |
+| 0.1 | 1 | 10 |
+| 5 | 1 | 1 |
+
+Zero-cost repair happens on the first stale access (also when both costs are
+zero). Free verification with positive repair cost continues indefinitely.
+Negative, infinite, and NaN costs are rejected. P1 uses exact arithmetic on the
+decimal representations of the configured fixed costs, so binary floating-point
+accumulation cannot delay the repair. Existing nominal cost logs remain floats.
+Costs varying within a stale episode are outside this step.
+
+Both replay commands accept `--verify-cost` and `--repair-cost`; omitted values
+retain the toy configuration or synthetic defaults (1 and 5). Resolved costs
+appear in the existing config snapshot/hash. Workload JSON remains unchanged.
+
+```bash
+python -m verify_repair.cli run-toy --policy p1 --verify-cost 0.1 --repair-cost 0.3 --verbose
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy p1 --verify-cost 2 --repair-cost 5
+python -m pytest -q tests/test_threshold.py tests/test_synthetic.py tests/test_cli.py
+```
+
+The engine passes an immutable `StaleAccessContext` as the `context` keyword to
+`on_stale_access(summary_id, query, *, context=None)`. Custom policies must accept
+this keyword. Existing baseline calls with two arguments still work; P1 requires
+the context. It contains the stored successful-verification count and fixed run
+costs, with no future events, group labels, or demand counts. SQLite's existing
+`queries_this_episode` field counts successful VERIFY operations, not all queries;
+no duplicate policy-owned state or schema migration is needed.
+
+The [Step 4 plan](docs/p1-threshold-plan.md) records the scope and validation.
+These checks establish deterministic switching and accounting with nominal
+costs; they do not establish research performance or held-out accuracy. Oracle,
+regret, shared budgets, learned demand, and generative LLM work remain future work.
 
 ## Tutorial notebooks
 - to be added -

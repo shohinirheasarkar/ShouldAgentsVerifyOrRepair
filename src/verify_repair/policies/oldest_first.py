@@ -1,6 +1,6 @@
 """Rank supplied stale candidates by age and return bounded scheduled repairs."""
 
-from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate
+from verify_repair.policies.base import MaintenanceAction, MaintenanceCandidate, StaleAccessContext
 
 
 class OldestFirst:
@@ -19,7 +19,9 @@ class OldestFirst:
     def on_correction(self, affected_summary_ids: list[str]) -> list[tuple[str, MaintenanceAction]]:
         return []
 
-    def on_stale_access(self, summary_id: str, query: str) -> MaintenanceAction:
+    def on_stale_access(
+        self, summary_id: str, query: str, *, context: StaleAccessContext | None = None,
+    ) -> MaintenanceAction:
         return MaintenanceAction.VERIFY
 
     def on_maintenance_tick(

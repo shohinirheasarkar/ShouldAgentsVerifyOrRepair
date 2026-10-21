@@ -2,9 +2,11 @@
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from verify_repair.config import load_config
+from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.oldest_first import OldestFirst
 from verify_repair.policies.periodic_refresh import PeriodicRefresh
@@ -58,6 +60,7 @@ def _add_run_arguments(
             "repair-on-first-access",
             "periodic-refresh",
             "oldest-first",
+            "p1",
         ],
         required=True,
     )
@@ -83,6 +86,8 @@ def _add_run_arguments(
     )
 
     run.add_argument("--verbose", action="store_true")
+    run.add_argument("--verify-cost", type=float, help="override nominal cost per verification")
+    run.add_argument("--repair-cost", type=float, help="override nominal cost per repair")
 
     run.add_argument(
         "--jsonl",
@@ -133,6 +138,7 @@ def main(argv: list[str] | None = None) -> None:
         "verify-only": VerifyOnly,
         "eager-refresh": EagerRefresh,
         "repair-on-first-access": RepairOnFirstAccess,
+        "p1": AccumulatedThreshold,
     }
 
     try:
@@ -150,10 +156,19 @@ def main(argv: list[str] | None = None) -> None:
                 raise ValueError("--jsonl must differ from the input workload")
             workload = read_synthetic(args.workload)
             config = synthetic_run_config(workload)
-            db, ledger, summaries, retriever, events = load_synthetic(workload)
         else:
             root = toy_root()
             config = load_config(root / "configs/toy.yaml")
+
+        # Validate resolved costs before opening SQLite or loading a model.
+        config = replace(
+            config,
+            verify_cost_units=config.verify_cost_units if args.verify_cost is None else args.verify_cost,
+            repair_cost_units=config.repair_cost_units if args.repair_cost is None else args.repair_cost,
+        )
+        if args.command == "run-synthetic":
+            db, ledger, summaries, retriever, events = load_synthetic(workload)
+        else:
             db, ledger, summaries, retriever, events = load_toy(root / "data/toy")
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
