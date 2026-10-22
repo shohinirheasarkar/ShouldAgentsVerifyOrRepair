@@ -357,7 +357,9 @@ def test_p1_saved_inputs_costs_replay_and_context_isolation(tmp_path, verify, re
             assert isinstance(context, StaleAccessContext)
             assert {field.name for field in fields(context)} == {
                 "verifications_this_episode", "verify_cost_units", "repair_cost_units",
+                "demand_prediction",
             }
+            assert context.demand_prediction is None
             return super().on_stale_access(summary_id, query, context=context)
 
     path = tmp_path / "inputs.json"

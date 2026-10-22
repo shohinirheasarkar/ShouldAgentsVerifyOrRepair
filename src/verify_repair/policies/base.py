@@ -4,6 +4,8 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from verify_repair.demand import DemandPrediction
+
 
 @dataclass(frozen=True)
 class MaintenanceCandidate:
@@ -17,13 +19,15 @@ class MaintenanceCandidate:
 class StaleAccessContext:
     """Successful VERIFY count before this access and fixed nominal run costs.
 
-    The engine reads the count from SQLite's queries_this_episode. Policies
-    receive no storage handle, evaluator labels, or future-access information.
+    The engine reads the count from SQLite's queries_this_episode. P2 may also
+    receive an immutable forecast computed from completed accesses. Policies
+    receive no storage handle, evaluator labels, or actual future demand.
     """
 
     verifications_this_episode: int
     verify_cost_units: float
     repair_cost_units: float
+    demand_prediction: DemandPrediction | None = None
 
 
 class MaintenanceAction(StrEnum):
@@ -33,6 +37,8 @@ class MaintenanceAction(StrEnum):
 
 
 class MaintenancePolicy(Protocol):
+    """Policies may opt into access tracking with immutable prediction_config."""
+
     name: str
     refresh_interval_events: int | None
 

@@ -111,3 +111,61 @@ def test_cli_rejects_invalid_costs_before_loading_database(tmp_path, monkeypatch
     assert error.value.code == 2
     assert "finite and nonnegative" in capsys.readouterr().err
     assert not log.exists()
+
+
+@pytest.mark.parametrize("command", ["run-toy", "run-synthetic"])
+def test_p2_cli_options_hashes_and_repeatable_replay(tmp_path, capsys, command):
+    from verify_repair.demand import PredictionConfig
+    from dataclasses import asdict
+
+    path, log = tmp_path / "inputs.json", tmp_path / "p2.jsonl"
+    extra = []
+    if command == "run-synthetic":
+        main(["generate-synthetic", "--memories", "100", "--output", str(path)])
+        extra = ["--workload", str(path)]
+    before = path.read_bytes() if path.exists() else None
+    args = [command, *extra, "--policy", "p2", "--jsonl", str(log)]
+    main(args)
+    first = log.read_bytes()
+    rows = [json.loads(line) for line in first.splitlines()]
+    assert rows[0]["config_snapshot"]["prediction"] == asdict(PredictionConfig())
+    main(args)
+    assert log.read_bytes() == first
+    main([*args, "--p2-half-life-seconds", "100", "--p2-horizon-seconds", "200",
+          "--p2-min-accesses", "4", "--verify-cost", "0.1", "--repair-cost", "0.3"])
+    changed = json.loads(log.read_text().splitlines()[0])
+    assert changed["config_snapshot"]["prediction"] == {
+        "half_life_seconds": 100, "horizon_seconds": 200, "min_accesses": 4}
+    assert changed["config_hash"] != rows[0]["config_hash"]
+    assert changed["run_id"] != rows[0]["run_id"]
+    assert changed["trace_hash"] == rows[0]["trace_hash"]
+    assert changed.keys() == rows[0].keys()
+    if before is not None:
+        assert path.read_bytes() == before
+    assert "policy=p2" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("option,value", [
+    ("--p2-half-life-seconds", "0"), ("--p2-half-life-seconds", "-1"),
+    ("--p2-half-life-seconds", "nan"), ("--p2-half-life-seconds", "inf"),
+    ("--p2-horizon-seconds", "-1"), ("--p2-horizon-seconds", "nan"),
+    ("--p2-horizon-seconds", "inf"), ("--p2-min-accesses", "0"),
+    ("--p2-min-accesses", "1.5"),
+])
+def test_p2_rejects_invalid_options_before_loading_database(tmp_path, monkeypatch, capsys, option, value):
+    def unexpected_load(*args):
+        pytest.fail("invalid prediction settings must fail before opening SQLite")
+    monkeypatch.setattr("verify_repair.cli.load_toy", unexpected_load)
+    log = tmp_path / "invalid.jsonl"
+    with pytest.raises(SystemExit) as error:
+        main(["run-toy", "--policy", "p2", f"{option}={value}", "--jsonl", str(log)])
+    assert error.value.code == 2
+    assert not log.exists()
+    assert "error:" in capsys.readouterr().err
+
+
+def test_p2_options_are_not_silently_ignored_for_other_policies(capsys):
+    with pytest.raises(SystemExit) as error:
+        main(["run-toy", "--policy", "p1", "--p2-horizon-seconds", "100"])
+    assert error.value.code == 2
+    assert "require --policy p2" in capsys.readouterr().err

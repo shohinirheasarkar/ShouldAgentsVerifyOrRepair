@@ -16,8 +16,8 @@ The source fact history is authoritative. Derived summaries are caches/derived s
 1. Read `IMPLEMENTATION_PLAN_PRE_LLM.md` for the accepted substrate's invariants
    and completed milestones. Do not restart milestones 0–10.
 2. Read `README.md` for current setup, CLI commands, and limitations.
-3. For synthetic workloads, read `docs/synthetic-workload-plan.md`, including
-   its validation audit.
+3. Read the synthetic workload and P1/P2 sections of `README.md` for usage
+   and behavior, and the contracts below for implementation constraints.
 4. Read `docs/research-grade-memory-handoff.md` when planning future research.
    It is a roadmap, not authorization to implement all its phases. Its original
    current-state list and unchecked boxes predate the additional baselines and
@@ -39,22 +39,24 @@ and optional BGE-M3 + FAISS retrieval.
 
 Subsequent scoped work adds three comparison baselines and **Step 3:
 deterministic synthetic workloads**, followed by **Step 4: P1 threshold
-maintenance** (see `docs/p1-threshold-plan.md`). The current checkout implements six
-policies and generate/save/load/replay CLI commands. The synthetic plan records
-validation through 10,000 memories. Inspect `git status` before editing: work
+maintenance** and **Step 5: P2 prediction-assisted
+threshold**. The current checkout implements seven
+policies and generate/save/load/replay CLI commands. Controlled synthetic workload validation has covered
+up to 10,000 memories. Inspect `git status` before editing: work
 may be uncommitted. Implementation and passing tests do not themselves imply
 owner acceptance, a commit, or a push.
 
 The project owners define **access uncertainty** as uncertainty about how
 frequently future queries access a specific fact or memory component. The
-synthetic generator controls those future counts; prediction remains future
+synthetic generator controls those future counts; P2 estimates future reuse from
+past accesses with a simple moving average. Learned prediction remains future
 work. Oldest-First has repair slots per tick, but a shared research budget and
 its horizon are not yet formally defined or implemented.
 
 Work beyond the implemented extensions needs a separately scoped request and
 plan. In particular, do not start these merely because the roadmap lists them:
 
-- P2/P3 or learned demand predictors;
+- P3 or trained demand predictors;
 - hindsight oracle, regret analysis, or shared-budget optimization/scheduling;
 - generative LLM calls, hosted APIs, LLM VERIFY/REPAIR/answer generation, or
   hosted-LLM synthetic text generation;
@@ -93,6 +95,7 @@ the run. Saved workload JSON is input data, not a persisted simulator database.
 | `periodic-refresh` | VERIFY until repaired | Repair all stale summaries at each tick, ordered by summary ID |
 | `oldest-first` | VERIFY until repaired | Repair up to the slot limit, ordered by `(stale_since, summary_id)` ascending |
 | `p1` | REPAIR when the next VERIFY would meet/exceed one repair's cost; otherwise VERIFY | No background repair; reset count on relevant changes or repair |
+| `p2` | REPAIR early for a confident high forecast; otherwise follow P1 exactly | No background repair; preserve popularity history across correction/repair |
 
 Scheduled policies default to one tick per **100 processed events**;
 Oldest-First defaults to **one repair slot per tick**. Both settings must be
@@ -109,6 +112,21 @@ using exact decimal-value ratios. Free repair wins immediately; free verificatio
 with positive repair cost never switches. Both replay commands support
 `--verify-cost` / `--repair-cost` and log the resolved costs. Variable costs within
 an episode remain outside scope.
+
+P2 stores per-summary access history separately from episode state in
+`summary_access_history`. Only P2 enables tracking; count every successful
+retrieved-summary access, including fresh ones, exactly once. Predict from
+completed accesses before the current query using event time and exponential
+decay. Defaults are half-life 3,600 seconds, rolling horizon 86,400 seconds, and
+minimum three observations. Confidence also requires a last access within one
+half-life and decayed count at least half the minimum. These are heuristic gates.
+P1 remains a hard switching deadline, including its exact decimal and free-cost
+rules. The optional immutable `demand_prediction` in `StaleAccessContext` contains
+an estimate, never actual future demand. Failed maintenance must roll back the
+observation, including recovery of semantic indexes after outer rollback. Log
+all P2 settings in the config snapshot/hash; reject a different half-life when
+reusing persisted history. See the P2 section of `README.md` and
+`tests/test_prediction.py` for predictor details and regression coverage.
 
 ## Non-negotiable domain invariants
 
@@ -202,6 +220,7 @@ python -m verify_repair.cli run-toy --policy repair-on-first-access
 python -m verify_repair.cli run-toy --policy periodic-refresh --refresh-interval-events 100
 python -m verify_repair.cli run-toy --policy oldest-first --refresh-interval-events 100 --repair-slots-per-tick 1
 python -m verify_repair.cli run-toy --policy p1
+python -m verify_repair.cli run-toy --policy p2
 ```
 
 Editable installation works on normal setups. On this macOS workspace hidden
@@ -240,6 +259,7 @@ changes do not need new tests that merely mirror the documentation.
 | `test_operations_policies.py`, `test_simulator.py` | VERIFY non-mutation, atomic REPAIR/index updates, baselines, canonical scenario, deterministic replay |
 | `test_oldest_first.py` | Stale-period age, ranking/ties, repair limits, scheduled action validation |
 | `test_threshold.py` | P1 exact switching, cost boundaries, episode resets, expiry, independent counts, rollback |
+| `test_prediction.py` | P2 decay/recency, hot/cold behavior, P1 fallback, causal history, persistence, resets, rollback |
 | `test_hybrid.py` | Exact RRF arithmetic and hybrid ranking with fake semantic retrieval |
 | `test_synthetic.py`, `test_cli.py` | Seed isolation, artifact validation/round trips, demand isolation, retrieval, replay, CLI input preservation |
 | `test_bootstrap.py` | SQLite foreign keys/schema |
@@ -320,5 +340,5 @@ Expected:
 ## Phase boundary
 
 The accepted original milestone plan remains complete. Maintain the implemented
-baselines, Step 3, and Step 4 within the requested task; start subsequent research work
+baselines and Steps 3–5 within the requested task; start subsequent research work
 only under its own scope. Updating this file does not authorize the next phase.

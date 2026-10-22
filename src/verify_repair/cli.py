@@ -6,10 +6,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from verify_repair.config import load_config
+from verify_repair.demand import PredictionConfig
 from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.oldest_first import OldestFirst
 from verify_repair.policies.periodic_refresh import PeriodicRefresh
+from verify_repair.policies.predicted_threshold import PredictedThreshold
 from verify_repair.policies.repair_on_first_access import (
     RepairOnFirstAccess,
 )
@@ -61,6 +63,7 @@ def _add_run_arguments(
             "periodic-refresh",
             "oldest-first",
             "p1",
+            "p2",
         ],
         required=True,
     )
@@ -88,6 +91,12 @@ def _add_run_arguments(
     run.add_argument("--verbose", action="store_true")
     run.add_argument("--verify-cost", type=float, help="override nominal cost per verification")
     run.add_argument("--repair-cost", type=float, help="override nominal cost per repair")
+    run.add_argument("--p2-half-life-seconds", type=float,
+                     help="P2 access-rate half-life (default: 3600 seconds)")
+    run.add_argument("--p2-horizon-seconds", type=float,
+                     help="P2 rolling forecast horizon (default: 86400 seconds)")
+    run.add_argument("--p2-min-accesses", type=int,
+                     help="P2 minimum completed accesses for a confident estimate (default: 3)")
 
     run.add_argument(
         "--jsonl",
@@ -142,10 +151,21 @@ def main(argv: list[str] | None = None) -> None:
     }
 
     try:
+        prediction_options = {
+            "half_life_seconds": args.p2_half_life_seconds,
+            "horizon_seconds": args.p2_horizon_seconds,
+            "min_accesses": args.p2_min_accesses,
+        }
+        if args.policy != "p2" and any(value is not None for value in prediction_options.values()):
+            raise ValueError("--p2-* options require --policy p2")
         if args.policy == "oldest-first":
             policy = OldestFirst(args.refresh_interval_events, args.repair_slots_per_tick)
         elif args.policy == "periodic-refresh":
             policy = PeriodicRefresh(args.refresh_interval_events)
+        elif args.policy == "p2":
+            policy = PredictedThreshold(PredictionConfig(**{
+                key: value for key, value in prediction_options.items() if value is not None
+            }))
         else:
             policy = policies[args.policy]()
         if args.command == "run-synthetic":

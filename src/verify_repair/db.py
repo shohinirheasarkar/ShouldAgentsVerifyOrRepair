@@ -67,6 +67,13 @@ def initialize(db: sqlite3.Connection) -> None:
     );
     CREATE INDEX IF NOT EXISTS summaries_stale
     ON summaries(is_stale, summary_id);
+    CREATE TABLE IF NOT EXISTS summary_access_history (
+      summary_id TEXT PRIMARY KEY REFERENCES summaries(summary_id),
+      total_accesses INTEGER NOT NULL CHECK(total_accesses > 0),
+      last_access_at TEXT NOT NULL,
+      decayed_accesses REAL NOT NULL CHECK(decayed_accesses >= 0 AND decayed_accesses <= total_accesses),
+      half_life_seconds REAL NOT NULL CHECK(half_life_seconds > 0)
+    );
     CREATE TABLE IF NOT EXISTS summary_slots (
       summary_id TEXT NOT NULL REFERENCES summaries(summary_id),
       slot_name TEXT NOT NULL, fact_id TEXT NOT NULL,

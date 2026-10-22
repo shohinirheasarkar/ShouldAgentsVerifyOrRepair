@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
+from collections.abc import Iterator
+from copy import deepcopy
 from math import isfinite
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from verify_repair.db import transaction
+from verify_repair.demand import DemandPrediction, predict_accesses
+from verify_repair.memory.access import AccessHistoryStore
 from verify_repair.maintenance.operations import MaintenanceService
 from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.staleness import mark_stale_from_fact_change
@@ -69,6 +74,11 @@ class Simulator:
         self.retriever = retriever
         self.policy = policy
         self.config = config
+        self.prediction_config = getattr(policy, "prediction_config", None)
+        self.access_history = (
+            AccessHistoryStore(summaries.db, self.prediction_config.half_life_seconds)
+            if self.prediction_config is not None else None
+        )
 
         semantic = (
             retriever.semantic_backend
@@ -91,6 +101,7 @@ class Simulator:
                     }
                 )
 
+        self._rebuild_semantic = rebuild_semantic if semantic is not None else None
         if semantic is not None:
             rebuild_semantic()
 
@@ -106,6 +117,26 @@ class Simulator:
                 rebuild_semantic if semantic else None
             ),
         )
+
+    @contextmanager
+    def _track_access(self, summary_id: str, at_time: datetime) -> Iterator[DemandPrediction | None]:
+        """Supply a prior-only forecast and commit one observation with maintenance."""
+        if self.access_history is None:
+            yield None
+            return
+        try:
+            with transaction(self.summaries.db):
+                prediction = predict_accesses(
+                    self.access_history.get(summary_id), at_time, self.prediction_config,
+                )
+                self.access_history.observe(summary_id, at_time)
+                yield prediction
+        except BaseException:
+            # Also recover vectors if the outer access transaction fails after
+            # the maintenance service's nested transaction has succeeded.
+            if self._rebuild_semantic is not None:
+                self._rebuild_semantic()
+            raise
 
     def run(
         self,
@@ -163,8 +194,13 @@ class Simulator:
         ).encode()
         trace_hash = hashlib.sha256(trace_data).hexdigest()
 
+        config_snapshot = asdict(self.config)
+        if self.prediction_config is not None:
+            config_snapshot["prediction"] = asdict(self.prediction_config)
+        config_hash = hashlib.sha256(json.dumps(config_snapshot, sort_keys=True).encode()).hexdigest()
+
         run_data = (
-            self.config.digest()
+            config_hash
             + self.policy.name
             + trace_hash
         ).encode()
@@ -223,8 +259,8 @@ class Simulator:
                     "required_fact_current": required_current,
                     "current_evidence": evidence,
                     "latency_ms_instrumentation_only": None,
-                    "config_hash": self.config.digest(),
-                    "config_snapshot": asdict(self.config),
+                    "config_hash": config_hash,
+                    "config_snapshot": deepcopy(config_snapshot),
                     "trace_hash": trace_hash,
                 }
             )
@@ -371,51 +407,53 @@ class Simulator:
                         hit.summary_id
                     )
 
-                    if summary.is_stale:
-                        action = self.policy.on_stale_access(
-                            hit.summary_id,
-                            event.query_text,
-                            context=StaleAccessContext(
-                                verifications_this_episode=summary.queries_this_episode,
-                                verify_cost_units=self.config.verify_cost_units,
-                                repair_cost_units=self.config.repair_cost_units,
-                            ),
-                        )
-
-                        if action == MaintenanceAction.VERIFY:
-                            verified = self.maintenance.verify(
+                    with self._track_access(hit.summary_id, event.timestamp) as prediction:
+                        if summary.is_stale:
+                            action = self.policy.on_stale_access(
                                 hit.summary_id,
-                                event.timestamp,
+                                event.query_text,
+                                context=StaleAccessContext(
+                                    verifications_this_episode=summary.queries_this_episode,
+                                    verify_cost_units=self.config.verify_cost_units,
+                                    repair_cost_units=self.config.repair_cost_units,
+                                    demand_prediction=prediction,
+                                ),
                             )
 
-                            evidence_refs = (
-                                verified.current_source_refs
-                            )
-                            evidence = verified.current_evidence
-                            verify_cost = (
-                                self.config.verify_cost_units
-                            )
+                            if action == MaintenanceAction.VERIFY:
+                                verified = self.maintenance.verify(
+                                    hit.summary_id,
+                                    event.timestamp,
+                                )
 
-                            result.verifications += 1
-                            result.cumulative_verify_cost += (
-                                verify_cost
-                            )
+                                evidence_refs = (
+                                    verified.current_source_refs
+                                )
+                                evidence = verified.current_evidence
+                                verify_cost = (
+                                    self.config.verify_cost_units
+                                )
 
-                        elif action == MaintenanceAction.REPAIR:
-                            repaired = self.maintenance.repair(
-                                hit.summary_id,
-                                event.timestamp,
-                            )
+                                result.verifications += 1
+                                result.cumulative_verify_cost += (
+                                    verify_cost
+                                )
 
-                            evidence_refs = repaired.source_refs
-                            repair_cost = (
-                                self.config.repair_cost_units
-                            )
+                            elif action == MaintenanceAction.REPAIR:
+                                repaired = self.maintenance.repair(
+                                    hit.summary_id,
+                                    event.timestamp,
+                                )
 
-                            result.repairs += 1
-                            result.cumulative_repair_cost += (
-                                repair_cost
-                            )
+                                evidence_refs = repaired.source_refs
+                                repair_cost = (
+                                    self.config.repair_cost_units
+                                )
+
+                                result.repairs += 1
+                                result.cumulative_repair_cost += (
+                                    repair_cost
+                                )
 
                     required_current = all(
                         any(

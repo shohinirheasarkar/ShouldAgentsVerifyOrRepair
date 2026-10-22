@@ -3,7 +3,7 @@
 CMSC 848N · Fall 2026 · [GitHub repository](https://github.com/shohinirheasarkar/ShouldAgentsVerifyOrRepair)
 
 ## Project intro
-Long-running agents may retain summaries built from facts that later change. When a query touches a summary flagged as stale, the agent can **verify** the current source for this answer or **repair** the stored summary for later use. We aim to compare decision policies under limited cost and uncertain future reuse. The proposal suggests a controlled event stream, simple fixed memory components, and comparisons to verify-only, eager repair, first-access repair, a threshold policy, and a hindsight oracle. **Access uncertainty** means uncertainty about how frequently future queries will access a specific fact or memory component. A shared budget still needs a precise definition. The synthetic generator controls future question counts; predicting those counts remains future work.
+Long-running agents may retain summaries built from facts that later change. When a query touches a summary flagged as stale, the agent can **verify** the current source for this answer or **repair** the stored summary for later use. We aim to compare decision policies under limited cost and uncertain future reuse. The proposal suggests a controlled event stream, simple fixed memory components, and comparisons to verify-only, eager repair, first-access repair, a threshold policy, and a hindsight oracle. **Access uncertainty** means uncertainty about how frequently future queries will access a specific fact or memory component. A shared budget still needs a precise definition. The synthetic generator controls future question counts; P2 now estimates future reuse with a simple moving average of past accesses.
 
 ## How to navigate this repo
 
@@ -17,16 +17,14 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | [docs/final-report.md](docs/final-report.md) | Final paper checklist | Pending |
 | [docs/related-works.md](docs/related-works.md) | Papers to verify and annotated notes | In progress |
 | [docs/research-grade-memory-handoff.md](docs/research-grade-memory-handoff.md) | Roadmap from the deterministic MVP to a research-grade memory experiment | Active handoff |
-| [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md) | Scoped Step 3 implementation and validation plan | Implemented |
-| [docs/p1-threshold-plan.md](docs/p1-threshold-plan.md) | Scoped Step 4 threshold convention and validation | Implemented |
 
 
 ## How to obtain, set up, and use the code
 
 The shared substrate is the accepted deterministic pre-LLM phase in
 [`IMPLEMENTATION_PLAN_PRE_LLM.md`](IMPLEMENTATION_PLAN_PRE_LLM.md), extended
-with the requested simple baselines, Step 3 synthetic generator, and Step 4 P1
-threshold policy. It uses
+with the requested simple baselines, Step 3 synthetic generator, Step 4 P1
+threshold policy, and Step 5 P2 prediction-assisted threshold. It uses
 SQLite for immutable fact versions and derived summaries, FTS5 for keyword
 retrieval, and YAML for the inspectable toy trace. Timestamps at public APIs
 are timezone-aware and normalized to UTC ISO 8601 in SQLite. Retractions are
@@ -158,8 +156,8 @@ changed by repair.
 Synthetic replay uses keyword retrieval and questions containing a unique,
 stable entity name, so each question reaches its intended memory before and
 after repair. This isolates maintenance decisions from retrieval uncertainty.
-All six policies, including P1, can replay the same artifact. Policies receive
-neither demand labels nor future counts. `--jsonl PATH` saves the existing
+All seven policies, including P1 and P2, can replay the same artifact. Policies
+receive neither demand labels nor future counts. `--jsonl PATH` saves the existing
 structured logs; `--refresh-interval-events` and `--repair-slots-per-tick`
 retain their existing meanings. Hybrid retrieval remains available in the toy
 demo.
@@ -167,8 +165,7 @@ demo.
 These are controlled development workloads with independent memories and one
 correction each. They are not a held-out benchmark or natural-language accuracy
 evaluation. Costs remain nominal. Demand prediction, repeated corrections,
-and dependency fan-out are outside this Step 3 change. The implementation and
-acceptance plan is [docs/synthetic-workload-plan.md](docs/synthetic-workload-plan.md).
+and dependency fan-out are outside this Step 3 change.
 
 ## P1 threshold maintenance (Step 4)
 
@@ -210,14 +207,76 @@ The engine passes an immutable `StaleAccessContext` as the `context` keyword to
 `on_stale_access(summary_id, query, *, context=None)`. Custom policies must accept
 this keyword. Existing baseline calls with two arguments still work; P1 requires
 the context. It contains the stored successful-verification count and fixed run
-costs, with no future events, group labels, or demand counts. SQLite's existing
-`queries_this_episode` field counts successful VERIFY operations, not all queries;
+costs, plus an optional past-only `demand_prediction` for P2 (see below). It
+contains no future events, group labels, or actual future-demand counts. SQLite's
+existing `queries_this_episode` field counts successful VERIFY operations, not all queries;
 no duplicate policy-owned state or schema migration is needed.
 
-The [Step 4 plan](docs/p1-threshold-plan.md) records the scope and validation.
-These checks establish deterministic switching and accounting with nominal
+The threshold tests establish deterministic switching and accounting with nominal
 costs; they do not establish research performance or held-out accuracy. Oracle,
 regret, shared budgets, learned demand, and generative LLM work remain future work.
+
+## P2 prediction-assisted threshold (Step 5)
+
+P2 (`--policy p2`, Python class `PredictedThreshold`) uses a time-decayed moving
+average to estimate additional accesses. It repairs early when a sufficiently
+recent history predicts that the current query plus those additional accesses
+would cost at least one repair. Otherwise it follows P1 exactly. With nominal
+costs 1/5, cold or uncertain memories wait until access 5; a recently popular
+memory can repair on access 1. Starting without history, closely spaced accesses
+build enough evidence to repair on access 4 under the defaults. An unqueried
+memory is never repaired. Free-cost behavior is identical to P1.
+
+The predictor uses only **completed retrieved-summary accesses before the current
+query**, including accesses while fresh. For each summary, SQLite stores the
+lifetime access count, last-access timestamp, decayed count, and its half-life in
+`summary_access_history`. At event time, it decays the previous count by
+`2 ** (-elapsed_seconds / half_life_seconds)` and adds one after a successful
+access. The estimated additional accesses are
+`decayed_count * ln(2) * horizon_seconds / half_life_seconds`.
+This gives more weight to recent use and decays through periods without queries.
+
+| Setting | CLI option | Default |
+| --- | --- | --- |
+| Access half-life | `--p2-half-life-seconds` | 3,600 seconds (1 hour) |
+| Rolling forecast horizon | `--p2-horizon-seconds` | 86,400 seconds (1 day) |
+| Minimum completed accesses | `--p2-min-accesses` | 3 |
+
+An estimate is considered confident only when the minimum access count has
+been observed, the last access is at most one half-life old, and the decayed
+count is at least half the configured minimum. These are simple heuristic gates,
+not calibrated probabilities. An unrepresentable forecast also falls back to P1.
+Durations must be finite and positive with a finite horizon/half-life ratio; the
+minimum count must be a positive integer. P2 options on other policies are rejected.
+
+```bash
+python -m verify_repair.cli run-toy --policy p2 --verbose
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy p2 --jsonl /tmp/p2.jsonl
+python -m verify_repair.cli run-synthetic --workload /tmp/workload-100.json --policy p2 --p2-half-life-seconds 3600 --p2-horizon-seconds 86400 --p2-min-accesses 3 --verify-cost 1 --repair-cost 5
+python -m pytest -q tests/test_prediction.py tests/test_threshold.py tests/test_synthetic.py tests/test_cli.py
+```
+
+The engine enables history tracking for P2 and supplies an immutable
+`DemandPrediction(expected_accesses, confident)` through
+`StaleAccessContext.demand_prediction`; other policies receive `None`. Policy
+instances contain only frozen `PredictionConfig` settings. Corrections and
+exception expiry reset P1 episode spending but retain access history, as does
+repair. Failed maintenance rolls back the access observation along with the
+summary transition. The new table is created automatically when opening an old
+database. Persistent history cannot be reused with a different half-life;
+use a fresh replay database for a different setting. CLI replay already does so.
+
+All resolved prediction settings appear under `config_snapshot.prediction` and
+participate in P2's config hash and run ID. Top-level log keys and existing
+policies' hashes remain unchanged. Saved workload JSON is unchanged. No new
+packages or generative LLM calls are required.
+
+The forecast horizon is a fixed rolling window, never the remaining trace length
+or a shared-budget horizon. No future labels or counts reach the policy. Low
+predictions wait longer **than high predictions**, never beyond P1's threshold.
+The fallback caps delay, but an incorrect high estimate can still cause an
+unnecessary early repair. The defaults and controlled hot/cold tests are development choices, not held-out
+accuracy, calibrated uncertainty, measured costs, or research conclusions.
 
 ## Tutorial notebooks
 - to be added -
