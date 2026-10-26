@@ -14,8 +14,8 @@ Status key: **Done** · **Partial** · **Not started**
 | 1–2 | Group formation and project selection | Done |
 | 3–5 | Proposal, repository, ledger, summary store, hybrid search, Eager Refresh and Verify-Only | Done (costs are nominal, not measured) |
 | 6–7 | Correction stream, staleness marking, remaining baselines | Done |
-| 8–9 | 10K generator, P1, P2, re-run baselines, midterm report | Partial: code done; results, plots, latency, and report remaining |
-| 10–11 | Hindsight oracle, semantic dirty-bit check, P3, repair budget | Not started |
+| 8–9 | 10K generator, P1, P2, re-run baselines, midterm report | Done except submitting the report (draft in `docs/midterm/`) |
+| 10–11 | Hindsight oracle, semantic dirty-bit check, P3, repair budget | Partial: oracle and regret done |
 | 12 | Correction-rate and shifting workloads, varied facts per summary, artifact audit | Not started |
 | 13–14 | LongMemEval and RealTime QA, 100K scale, repository cleanup, paper draft | Not started |
 | 15 | Final paper and presentation | Not started |
@@ -56,7 +56,7 @@ Evidence: commit `183f783`; [IMPLEMENTATION_PLAN_PRE_LLM.md](../IMPLEMENTATION_P
 
 Evidence: commits `e779771`, `97c3851`, `b2c24ac`; [evaluation protocol](evaluation_protocol.md) (`95e7090`).
 
-### Weeks 8–9: Synthetic workloads, P1, P2 — Partial
+### Weeks 8–9: Synthetic workloads, P1, P2 — Done (report pending)
 
 Done:
 
@@ -69,14 +69,15 @@ Done:
   otherwise P2 behaves exactly like P1.
 - All seven policies replay the same saved workload through the CLI.
 
-Remaining for the midterm:
+Midterm work (branch `midterm-experiments`):
 
-- [ ] Re-run all baselines, P1, and P2 at 10K on identical traces and save
-      results (CSV with seed, costs, and policy settings).
-- [ ] Cost plots by policy and by cold/warm/hot group.
-- [ ] p50/p95 query latency. Wall-clock latency is not recorded yet; the log
-      field `latency_ms_instrumentation_only` is always null.
-- [ ] Midterm report ([checklist](midterm.md)).
+- [x] Hindsight oracle and regret scoring (`evaluation.py`), opt-in wall-clock
+      latency, and the `run-experiment` / `summarize-experiment` commands.
+- [x] All 7 policies at 10K, 5 seeds, ρ ∈ {2, 5, 10}, balanced and
+      cold-heavy mixes; results in `docs/midterm/results/`.
+- [x] Cost plots (`docs/midterm/figures/`) and p50/p95/p99 latency.
+- [ ] Midterm report: draft in `docs/midterm/midterm_report.tex`; verify
+      citations, compile on Overleaf, and submit ([checklist](midterm.md)).
 
 Evidence: commits `c95af5a`, `af7a995`, `3704039`.
 
@@ -105,19 +106,15 @@ corrections spread through the trace (planned for Week 12).
 
 ### Now → end of Week 9: Midterm (Tier 1)
 
-1. Build an experiment runner that replays one saved workload under every
-   policy and writes a results CSV.
-2. Add wall-clock latency instrumentation for p50/p95.
-3. Run at 10K across several seeds and cost ratios ρ = cr/cv; produce cost
-   and latency plots.
-4. Write the midterm report: preliminary results, the differences above, and
-   the updated plan.
+1. Verify the citations in `docs/midterm/references.bib`, compile the report
+   on Overleaf, and submit it.
+
+The milestones below follow the updated plan in the midterm report, Table 2.
 
 ### Weeks 10–11
 
-- [ ] Hindsight oracle: per-episode cost `min(k·cv, cr)`, computed by the
-      evaluator from the saved true demand; checked against brute force on
-      small hand-built cases. Report regret and `C(π)/C(oracle)` by group.
+- [x] Hindsight oracle: per-episode cost `min(k·cv, cr)`, checked against
+      exhaustive search; regret and `C(π)/C(oracle)` by group.
 - [ ] Repair budget B that resets each time window: skipped repairs go to a
       waiting list ordered by predicted savings; a budget-aware oracle
       (knapsack, exact at 10K).
