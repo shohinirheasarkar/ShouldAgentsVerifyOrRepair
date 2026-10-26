@@ -11,6 +11,7 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | --- | --- | --- |
 | [README.md](README.md) | Project overview and contribution guide | Current |
 | [docs/proposal.md](docs/proposal.md) | Proposal requirements| Draft checklist |
+| [docs/timeline.md](docs/timeline.md) | Progress against the proposal timeline and next steps | Current |
 | [docs/midterm.md](docs/midterm.md) | Midterm requirements| Pending |
 | [docs/artifact-audit.md](docs/artifact-audit.md) | Audit rubric and reproducibility evidence | Pending |
 | [docs/final-presentation.md](docs/final-presentation.md) | Presentation rubric and slides | Pending |
@@ -214,7 +215,7 @@ no duplicate policy-owned state or schema migration is needed.
 
 The threshold tests establish deterministic switching and accounting with nominal
 costs; they do not establish research performance or held-out accuracy. Oracle,
-regret, shared budgets, learned demand, and generative LLM work remain future work.
+shared budgets, learned demand, and generative LLM work remain future work.
 
 ## P2 prediction-assisted threshold (Step 5)
 
@@ -277,6 +278,45 @@ predictions wait longer **than high predictions**, never beyond P1's threshold.
 The fallback caps delay, but an incorrect high estimate can still cause an
 unnecessary early repair. The defaults and controlled hot/cold tests are development choices, not held-out
 accuracy, calibrated uncertainty, measured costs, or research conclusions.
+
+## Oracle, regret, and experiments
+
+`run-experiment` replays saved synthetic workloads under every selected
+policy and repair cost, then scores each replay against the **hindsight
+oracle**. Each synthetic memory has one stale episode, so the oracle cost for a
+memory with `k` future queries is `min(k * c_v, c_r)`. Regret is
+`C(policy) - C(oracle)`; the CSV also reports `C(policy) / C(oracle)`. Rows
+are written for all memories and for the cold, warm, and hot groups. The
+evaluator reads the workload's demands only after a replay finishes; policies
+never receive them.
+
+`--measure-latency` records wall-clock milliseconds per query, from retrieval
+through query-time VERIFY/REPAIR. It excludes correction-time and scheduled
+repairs. Timing is off by default because it is the only non-deterministic
+field; it measures the deterministic substrate, not an LLM. The CSV reports
+p50/p95/p99 latency and p95 latency separately for queries with and without
+maintenance (nearest-rank percentiles).
+
+`summarize-experiment` averages result CSVs across seeds with 95% Student-t
+confidence intervals. Both commands refuse to overwrite an existing file.
+
+```bash
+for seed in 1 2 3 4 5; do
+  python -m verify_repair.cli generate-synthetic --memories 10000 --seed $seed --output /tmp/w10k-$seed.json
+done
+python -m verify_repair.cli run-experiment --workload /tmp/w10k-*.json \
+  --verify-cost 1 --repair-costs 2 5 10 --measure-latency --output /tmp/results.csv
+python -m verify_repair.cli summarize-experiment --input /tmp/results.csv --output /tmp/summary.csv
+python -m pip install '.[analysis]'
+python scripts/plot_experiment.py --summary /tmp/summary.csv --output-dir /tmp/figures
+```
+
+Scheduled policies use `--refresh-interval-events` (default 100) and
+`--repair-slots-per-tick` (default 1). A 10,000-memory replay takes roughly
+45 seconds on one laptop core; separate seeds can run as parallel processes
+and be summarized together. The oracle formula assumes the synthetic-v1
+contract (one correction per memory before its queries); repeated corrections
+and a budget-aware oracle are future work.
 
 ## Tutorial notebooks
 - to be added -

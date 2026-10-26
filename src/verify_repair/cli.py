@@ -7,17 +7,18 @@ from pathlib import Path
 
 from verify_repair.config import load_config
 from verify_repair.demand import PredictionConfig
-from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
-from verify_repair.policies.eager_refresh import EagerRefresh
-from verify_repair.policies.oldest_first import OldestFirst
-from verify_repair.policies.periodic_refresh import PeriodicRefresh
-from verify_repair.policies.predicted_threshold import PredictedThreshold
-from verify_repair.policies.repair_on_first_access import (
-    RepairOnFirstAccess,
+from verify_repair.experiments import (
+    POLICY_NAMES,
+    RESULT_FIELDS,
+    make_policy,
+    read_rows,
+    run_experiment,
+    summarize_rows,
+    summary_fields,
+    write_rows,
 )
-from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.retrieval.hybrid import HybridRetriever
-from verify_repair.simulator.engine import Simulator
+from verify_repair.simulator.engine import RunConfig, Simulator
 from verify_repair.simulator.synthetic import (
     GROUP_BOUNDS,
     SyntheticConfig,
@@ -56,15 +57,7 @@ def _add_run_arguments(
 ) -> None:
     run.add_argument(
         "--policy",
-        choices=[
-            "verify-only",
-            "eager-refresh",
-            "repair-on-first-access",
-            "periodic-refresh",
-            "oldest-first",
-            "p1",
-            "p2",
-        ],
+        choices=POLICY_NAMES,
         required=True,
     )
 
@@ -122,7 +115,54 @@ def main(argv: list[str] | None = None) -> None:
         generate.add_argument(f"--{group}-queries", type=int, nargs=2, default=bounds,
                               metavar=("MIN", "MAX"), help=f"inclusive {group} query range; default: {bounds}")
     generate.add_argument("--output", type=Path, required=True, help="new workload file (must not exist)")
+    experiment = sub.add_parser("run-experiment",
+                                help="replay saved workloads under several policies and costs; write CSV")
+    experiment.add_argument("--workload", type=Path, nargs="+", required=True)
+    experiment.add_argument("--policies", nargs="+", choices=POLICY_NAMES, default=list(POLICY_NAMES))
+    experiment.add_argument("--verify-cost", type=float, default=1.0, help="nominal cost per verification")
+    experiment.add_argument("--repair-costs", type=float, nargs="+", default=[5.0],
+                            help="nominal repair costs to sweep (one replay per value)")
+    experiment.add_argument("--refresh-interval-events", type=int, default=100)
+    experiment.add_argument("--repair-slots-per-tick", type=int, default=1)
+    experiment.add_argument("--measure-latency", action="store_true",
+                            help="record wall-clock query latency (non-deterministic)")
+    experiment.add_argument("--output", type=Path, required=True, help="new results CSV (must not exist)")
+    summarize = sub.add_parser("summarize-experiment", help="average result CSVs across seeds with 95%% CIs")
+    summarize.add_argument("--input", type=Path, nargs="+", required=True)
+    summarize.add_argument("--output", type=Path, required=True, help="new summary CSV (must not exist)")
     args = parser.parse_args(argv)
+
+    if args.command == "run-experiment":
+        try:
+            if args.output.exists():
+                raise ValueError(f"{args.output} already exists")
+            if any(args.output.resolve() == path.resolve() for path in args.workload):
+                raise ValueError("--output must differ from the input workloads")
+            cost_pairs = [(args.verify_cost, cost) for cost in args.repair_costs]
+            # Validate every setting before creating the output file.
+            for pair in cost_pairs:
+                replace(RunConfig(), verify_cost_units=pair[0], repair_cost_units=pair[1])
+            for name in args.policies:
+                make_policy(name, args.refresh_interval_events, args.repair_slots_per_tick)
+            rows = write_rows(args.output, run_experiment(
+                args.workload, args.policies, cost_pairs,
+                refresh_interval_events=args.refresh_interval_events,
+                repair_slots_per_tick=args.repair_slots_per_tick,
+                measure_latency=args.measure_latency,
+            ), RESULT_FIELDS)
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+        print(f"rows={rows} workloads={len(args.workload)} policies={len(args.policies)} "
+              f"repair_costs={args.repair_costs} verify_cost={args.verify_cost:g} output={args.output}")
+        return
+
+    if args.command == "summarize-experiment":
+        try:
+            rows = write_rows(args.output, summarize_rows(read_rows(args.input)), summary_fields())
+        except (ValueError, OSError, KeyError) as exc:
+            parser.error(str(exc))
+        print(f"settings={rows} output={args.output}")
+        return
 
     if args.command == "generate-synthetic":
         try:
@@ -143,13 +183,6 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         return
 
-    policies = {
-        "verify-only": VerifyOnly,
-        "eager-refresh": EagerRefresh,
-        "repair-on-first-access": RepairOnFirstAccess,
-        "p1": AccumulatedThreshold,
-    }
-
     try:
         prediction_options = {
             "half_life_seconds": args.p2_half_life_seconds,
@@ -158,16 +191,12 @@ def main(argv: list[str] | None = None) -> None:
         }
         if args.policy != "p2" and any(value is not None for value in prediction_options.values()):
             raise ValueError("--p2-* options require --policy p2")
-        if args.policy == "oldest-first":
-            policy = OldestFirst(args.refresh_interval_events, args.repair_slots_per_tick)
-        elif args.policy == "periodic-refresh":
-            policy = PeriodicRefresh(args.refresh_interval_events)
-        elif args.policy == "p2":
-            policy = PredictedThreshold(PredictionConfig(**{
+        policy = make_policy(
+            args.policy, args.refresh_interval_events, args.repair_slots_per_tick,
+            PredictionConfig(**{
                 key: value for key, value in prediction_options.items() if value is not None
-            }))
-        else:
-            policy = policies[args.policy]()
+            }) if args.policy == "p2" else None,
+        )
         if args.command == "run-synthetic":
             if args.jsonl and (
                 args.jsonl.resolve() == args.workload.resolve()

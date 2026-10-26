@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from contextlib import contextmanager
 from collections.abc import Iterator
 from copy import deepcopy
 from math import isfinite
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 
 from verify_repair.db import transaction
@@ -58,6 +59,8 @@ class RunResult:
     cumulative_verify_cost: float
     cumulative_repair_cost: float
     stale_source_uses: int
+    # Wall-clock milliseconds per query, in trace order; empty unless measured.
+    query_latency_ms: list[float] = field(default_factory=list)
 
 
 class Simulator:
@@ -68,12 +71,20 @@ class Simulator:
         retriever: Retriever,
         policy: MaintenancePolicy,
         config: RunConfig = RunConfig(),
+        *,
+        measure_latency: bool = False,
     ):
+        """Set ``measure_latency`` to time each query from retrieval through
+        query-time maintenance. It excludes correction-time and scheduled
+        repairs (background work). Timing is the only non-deterministic log
+        field, so it stays off unless requested.
+        """
         self.ledger = ledger
         self.summaries = summaries
         self.retriever = retriever
         self.policy = policy
         self.config = config
+        self.measure_latency = measure_latency
         self.prediction_config = getattr(policy, "prediction_config", None)
         self.access_history = (
             AccessHistoryStore(summaries.db, self.prediction_config.half_life_seconds)
@@ -384,6 +395,8 @@ class Simulator:
 
             else:
                 result.queries += 1
+                first_row = len(result.logs)
+                started = time.perf_counter()
 
                 hits = self.retriever.search(
                     event.query_text,
@@ -493,6 +506,12 @@ class Simulator:
                         required_current=required_current,
                         evidence=evidence,
                     )
+
+                if self.measure_latency:
+                    elapsed_ms = (time.perf_counter() - started) * 1000.0
+                    result.query_latency_ms.append(elapsed_ms)
+                    for row in result.logs[first_row:]:
+                        row["latency_ms_instrumentation_only"] = elapsed_ms
 
             processed_event_count += 1
             interval = self.policy.refresh_interval_events

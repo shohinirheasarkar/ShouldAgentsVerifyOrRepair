@@ -57,7 +57,8 @@ Work beyond the implemented extensions needs a separately scoped request and
 plan. In particular, do not start these merely because the roadmap lists them:
 
 - P3 or trained demand predictors;
-- hindsight oracle, regret analysis, or shared-budget optimization/scheduling;
+- a budget-aware oracle, or shared-budget optimization/scheduling (the
+  single-episode hindsight oracle and regret scoring are implemented);
 - generative LLM calls, hosted APIs, LLM VERIFY/REPAIR/answer generation, or
   hosted-LLM synthetic text generation;
 - semantic dirty-bit LLM evaluation or external benchmark integration;
@@ -78,6 +79,8 @@ research conclusion.
 | `src/verify_repair/policies/` | Storage-free decisions and scheduled maintenance hooks |
 | `src/verify_repair/retrieval/` | FTS5 keyword retrieval, RRF/hybrid, optional semantic adapter |
 | `src/verify_repair/simulator/` | Typed events, engine/logging/accounting, toy loader, synthetic workloads |
+| `src/verify_repair/evaluation.py`, `experiments.py` | Evaluator-only oracle/regret scoring; multi-policy experiment runner and seed summaries |
+| `scripts/plot_experiment.py` | Optional matplotlib figures from a summary CSV |
 | `src/verify_repair/cli.py`, `config.py` | CLI dispatch and toy configuration loading |
 | `tests/` | Flat test layout; use the existing files rather than the original plan's suggested subdirectories |
 | `data/toy/`, `configs/toy.yaml` | Inspectable toy facts/summaries/events and nominal costs |
@@ -262,6 +265,7 @@ changes do not need new tests that merely mirror the documentation.
 | `test_prediction.py` | P2 decay/recency, hot/cold behavior, P1 fallback, causal history, persistence, resets, rollback |
 | `test_hybrid.py` | Exact RRF arithmetic and hybrid ranking with fake semantic retrieval |
 | `test_synthetic.py`, `test_cli.py` | Seed isolation, artifact validation/round trips, demand isolation, retrieval, replay, CLI input preservation |
+| `test_evaluation.py` | Oracle vs exhaustive search, hand-computed regret, tick rows, opt-in latency, experiment CSVs |
 | `test_bootstrap.py` | SQLite foreign keys/schema |
 | `test_semantic_optional.py` | Opt-in live BGE-M3/FAISS integration |
 
