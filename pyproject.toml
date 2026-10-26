@@ -12,6 +12,7 @@ dependencies = ["PyYAML>=6"]
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 semantic = ["faiss-cpu>=1.8", "FlagEmbedding>=1.2"]
+analysis = ["matplotlib>=3.7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
