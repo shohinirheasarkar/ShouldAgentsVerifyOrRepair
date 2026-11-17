@@ -16,9 +16,10 @@ from math import sqrt
 from pathlib import Path
 from statistics import mean, stdev
 
+from verify_repair.budget_oracle import EXACT, budget_oracle
 from verify_repair.demand import PredictionConfig
 from verify_repair.evaluation import (
-    ORACLE_STALE_ALLOWED, ORACLE_VERIFY_REPAIR, score_evolving_run, score_synthetic_run,
+    GROUPS, ORACLE_STALE_ALLOWED, ORACLE_VERIFY_REPAIR, score_evolving_run, score_synthetic_run,
 )
 from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
 from verify_repair.policies.eager_refresh import EagerRefresh
@@ -56,7 +57,7 @@ DEFAULT_STALE_PENALTY = 10.0
 RUN_KEYS = (
     "workload_format", "memories", "policy", "verify_cost", "repair_cost", "cost_ratio",
     "stale_penalty", "oracle", "refresh_interval_events", "repair_slots_per_tick",
-    "budget_units", "budget_window_seconds", "queue_order", "group",
+    "budget_units", "budget_window_seconds", "queue_order", "budget_oracle_method", "group",
 )
 # Run-level budget counters, reported on the "all" row only.
 BUDGET_METRICS = ("deferrals", "executed_from_queue", "requeued", "still_queued", "peak_queue",
@@ -64,7 +65,7 @@ BUDGET_METRICS = ("deferrals", "executed_from_queue", "requeued", "still_queued"
 # Columns added after the midterm; older CSVs without them still summarize.
 LEGACY_DEFAULTS = {"workload_format": SYNTHETIC_FORMAT, "stale_penalty": "0.0",
                    "oracle": ORACLE_VERIFY_REPAIR, "budget_units": "", "budget_window_seconds": "",
-                   "queue_order": ""}
+                   "queue_order": "", "budget_oracle_method": ""}
 METRICS = (
     "queries", "verifications", "repairs", "verify_cost_total", "repair_cost_total",
     "stale_source_uses", "total_cost", "oracle_cost", "regret", "cost_vs_oracle",
@@ -74,6 +75,7 @@ METRICS = (
     "repaired_episodes", "mean_time_to_repair_s", "p95_time_to_repair_s",
     "peak_backlog", "mean_backlog",
     *BUDGET_METRICS,
+    "budget_oracle_cost", "budget_regret", "budget_cost_vs_oracle", "budget_oracle_gap",
 )
 RESULT_FIELDS = (
     "dataset_id", "seed", "workload_sha256", "run_id", "config_hash", "trace_hash",
@@ -126,6 +128,7 @@ def run_experiment(
     budget_units: float | None = None,
     budget_window_seconds: float = 3600.0,
     queue_order: str = "predicted-savings",
+    budget_oracle_method: str = EXACT,
 ) -> Iterator[dict]:
     """Yield result rows; every policy replays identical saved inputs.
 
@@ -134,7 +137,9 @@ def run_experiment(
     need v2 scoring). Demand labels and episode metadata are read only by the
     scorer after each replay finishes. ``budget_units`` (B per window of
     ``budget_window_seconds``) applies one shared repair budget to every
-    policy; windows start at the trace start (synthetic START).
+    policy; windows start at the trace start (synthetic START). For v2 traces
+    with a budget, rows also carry the budget-aware oracle (Step 4) and
+    budget-matched regret; ``greedy-heuristic`` rows are not lower bounds.
     """
     if budget_units is not None:
         RepairBudget(budget_units, budget_window_seconds, queue_order)  # fail before replay
@@ -149,6 +154,7 @@ def run_experiment(
         if not evolving and STALE_USE_POLICIES & set(names):
             raise ValueError("stale-use policies need synthetic-v2 workloads (multi-episode scoring)")
         base = evolving_run_config(workload) if evolving else synthetic_run_config(workload)
+        oracles = {}
         for verify_cost, repair_cost in cost_pairs:
             config = replace(base, verify_cost_units=verify_cost, repair_cost_units=repair_cost)
             for name in names:
@@ -163,14 +169,27 @@ def run_experiment(
                 finally:
                     db.close()
                 stale_use = name in STALE_USE_POLICIES
+                matched = {}
                 if evolving:
-                    scores, _ = score_evolving_run(workload, result, verify_cost, repair_cost, stale_penalty,
-                                                   allow_stale_use=stale_use)
+                    scores, episode_scores = score_evolving_run(
+                        workload, result, verify_cost, repair_cost, stale_penalty, allow_stale_use=stale_use)
+                    if budget_units is not None:
+                        key = (verify_cost, repair_cost, stale_use)
+                        if key not in oracles:
+                            oracles[key] = budget_oracle(
+                                workload, verify_cost, repair_cost, budget_units, budget_window_seconds,
+                                stale_penalty=stale_penalty, allow_stale_use=stale_use,
+                                method=budget_oracle_method)
+                        oracle = oracles[key]
+                        for group in GROUPS:
+                            matched[group] = sum(oracle.per_episode[e.episode_id] for e in episode_scores
+                                                 if group in ("all", e.group))
                 else:
                     scores = score_synthetic_run(workload, result, verify_cost, repair_cost, stale_penalty)
                 first = result.logs[0]
                 for score in scores:
                     values = asdict(score)
+                    bound = matched.get(score.group) if matched else None
                     yield {
                         "dataset_id": workload.config.dataset_id(),
                         "seed": workload.config.seed,
@@ -195,6 +214,11 @@ def run_experiment(
                         "group_memories": score.memories,
                         **{key: (result.budget or {}).get(key) if score.group == "all" else None
                            for key in BUDGET_METRICS},
+                        "budget_oracle_method": oracles[key].method if matched else None,
+                        "budget_oracle_cost": bound,
+                        "budget_regret": score.total_cost - bound if bound is not None else None,
+                        "budget_cost_vs_oracle": score.total_cost / bound if bound else None,
+                        "budget_oracle_gap": oracles[key].mip_gap if matched else None,
                         "verify_cost_total": values.pop("verify_cost"),
                         "repair_cost_total": values.pop("repair_cost"),
                         **{key: values[key] for key in METRICS if key in values},

@@ -7,7 +7,7 @@ name = "verify-repair"
 version = "0.1.0"
 description = "Deterministic verify-versus-repair memory substrate"
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6"]
+dependencies = ["PyYAML>=6", "scipy>=1.11"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
