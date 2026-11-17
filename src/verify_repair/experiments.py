@@ -28,12 +28,13 @@ from verify_repair.policies.periodic_refresh_stale import PeriodicRefreshStale
 from verify_repair.policies.predicted_threshold import PredictedThreshold
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
 from verify_repair.policies.verify_only import VerifyOnly
+from verify_repair.simulator.budget import RepairBudget
 from verify_repair.simulator.engine import Simulator
 from verify_repair.simulator.evolving import (
     FORMAT_VERSION as EVOLVING_FORMAT, EvolvingWorkload, evolving_run_config, load_evolving, read_workload,
 )
 from verify_repair.simulator.synthetic import (
-    FORMAT_VERSION as SYNTHETIC_FORMAT, load_synthetic, synthetic_run_config,
+    FORMAT_VERSION as SYNTHETIC_FORMAT, START, load_synthetic, synthetic_run_config,
 )
 
 POLICY_NAMES = (
@@ -54,11 +55,16 @@ DEFAULT_STALE_PENALTY = 10.0
 # Settings and identifiers that define one replay; summaries group on these.
 RUN_KEYS = (
     "workload_format", "memories", "policy", "verify_cost", "repair_cost", "cost_ratio",
-    "stale_penalty", "oracle", "refresh_interval_events", "repair_slots_per_tick", "group",
+    "stale_penalty", "oracle", "refresh_interval_events", "repair_slots_per_tick",
+    "budget_units", "budget_window_seconds", "queue_order", "group",
 )
+# Run-level budget counters, reported on the "all" row only.
+BUDGET_METRICS = ("deferrals", "executed_from_queue", "requeued", "still_queued", "peak_queue",
+                  "mean_wait_s", "max_wait_s", "max_window_spend")
 # Columns added after the midterm; older CSVs without them still summarize.
 LEGACY_DEFAULTS = {"workload_format": SYNTHETIC_FORMAT, "stale_penalty": "0.0",
-                   "oracle": ORACLE_VERIFY_REPAIR}
+                   "oracle": ORACLE_VERIFY_REPAIR, "budget_units": "", "budget_window_seconds": "",
+                   "queue_order": ""}
 METRICS = (
     "queries", "verifications", "repairs", "verify_cost_total", "repair_cost_total",
     "stale_source_uses", "total_cost", "oracle_cost", "regret", "cost_vs_oracle",
@@ -67,6 +73,7 @@ METRICS = (
     "episodes", "stale_cost", "relaxed_oracle_episodes", "stale_exposure_hours",
     "repaired_episodes", "mean_time_to_repair_s", "p95_time_to_repair_s",
     "peak_backlog", "mean_backlog",
+    *BUDGET_METRICS,
 )
 RESULT_FIELDS = (
     "dataset_id", "seed", "workload_sha256", "run_id", "config_hash", "trace_hash",
@@ -116,14 +123,21 @@ def run_experiment(
     repair_slots_per_tick: int = 1,
     measure_latency: bool = False,
     stale_penalty: float = DEFAULT_STALE_PENALTY,
+    budget_units: float | None = None,
+    budget_window_seconds: float = 3600.0,
+    queue_order: str = "predicted-savings",
 ) -> Iterator[dict]:
     """Yield result rows; every policy replays identical saved inputs.
 
     Accepts synthetic-v1 and synthetic-v2 workloads. ``policies=None`` runs
     every policy that applies to each workload's format (stale-use policies
     need v2 scoring). Demand labels and episode metadata are read only by the
-    scorer after each replay finishes.
+    scorer after each replay finishes. ``budget_units`` (B per window of
+    ``budget_window_seconds``) applies one shared repair budget to every
+    policy; windows start at the trace start (synthetic START).
     """
+    if budget_units is not None:
+        RepairBudget(budget_units, budget_window_seconds, queue_order)  # fail before replay
     for name in policies or POLICY_NAMES:
         make_policy(name, refresh_interval_events, repair_slots_per_tick)  # fail before replay
     for path in workload_paths:
@@ -142,8 +156,10 @@ def run_experiment(
                 db, ledger, summaries, retriever, events = (
                     load_evolving(workload) if evolving else load_synthetic(workload))
                 try:
+                    budget = None if budget_units is None else RepairBudget(
+                        budget_units, budget_window_seconds, queue_order, origin=START)
                     result = Simulator(ledger, summaries, retriever, policy, config,
-                                       measure_latency=measure_latency).run(events)
+                                       measure_latency=measure_latency, budget=budget).run(events)
                 finally:
                     db.close()
                 stale_use = name in STALE_USE_POLICIES
@@ -172,8 +188,13 @@ def run_experiment(
                         "oracle": ORACLE_STALE_ALLOWED if stale_use else ORACLE_VERIFY_REPAIR,
                         "refresh_interval_events": refresh_interval_events,
                         "repair_slots_per_tick": repair_slots_per_tick,
+                        "budget_units": budget_units,
+                        "budget_window_seconds": budget_window_seconds if budget_units is not None else None,
+                        "queue_order": queue_order if budget_units is not None else None,
                         "group": score.group,
                         "group_memories": score.memories,
+                        **{key: (result.budget or {}).get(key) if score.group == "all" else None
+                           for key in BUDGET_METRICS},
                         "verify_cost_total": values.pop("verify_cost"),
                         "repair_cost_total": values.pop("repair_cost"),
                         **{key: values[key] for key in METRICS if key in values},

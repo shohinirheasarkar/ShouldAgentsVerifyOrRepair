@@ -285,6 +285,8 @@ def score_evolving_run(
         if summary_id not in profiles:
             raise ValueError(f"log row references unknown summary {summary_id}")
         key = key_of(row["event_id"])
+        if row["maintenance_trigger"] == "deferred_queue":
+            key = (key[0], key[1] - 0.5)  # the queue drains just before its event is processed
         current = locate(summary_id, key)
         if row["event_type"] == "query" and row["maintenance_trigger"] is None:
             query_rows[row["query_id"]].append(row)

@@ -19,6 +19,7 @@ from verify_repair.experiments import (
     write_rows,
 )
 from verify_repair.retrieval.hybrid import HybridRetriever
+from verify_repair.simulator.budget import QUEUE_ORDERS, RepairBudget
 from verify_repair.simulator.engine import RunConfig, Simulator
 from verify_repair.simulator.evolving import (
     DEMAND_MODES,
@@ -29,6 +30,7 @@ from verify_repair.simulator.evolving import (
     load_evolving,
     read_workload,
 )
+from verify_repair.simulator.synthetic import START as SYNTHETIC_START
 from verify_repair.simulator.synthetic import (
     GROUP_BOUNDS,
     SyntheticConfig,
@@ -108,6 +110,15 @@ def _add_run_arguments(
     )
 
 
+def _add_budget_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--budget", type=float,
+                        help="shared repair budget B per window, in repair-cost units (default: unlimited)")
+    parser.add_argument("--budget-window-seconds", type=float, default=3600.0,
+                        help="budget reset window (default: 3600 seconds)")
+    parser.add_argument("--queue-order", choices=QUEUE_ORDERS, default="predicted-savings",
+                        help="deferred-repair order when the budget resets")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command")
@@ -116,6 +127,7 @@ def main(argv: list[str] | None = None) -> None:
     synthetic = sub.add_parser("run-synthetic", help="replay a saved synthetic workload")
     _add_run_arguments(synthetic, retrieval_choices=("keyword",))
     synthetic.add_argument("--workload", type=Path, required=True)
+    _add_budget_arguments(synthetic)
     generate = sub.add_parser("generate-synthetic", help="create a seeded synthetic workload JSON file")
     generate.add_argument("--memories", type=int, default=100)
     generate.add_argument("--seed", type=int, default=12345)
@@ -160,6 +172,7 @@ def main(argv: list[str] | None = None) -> None:
     experiment.add_argument("--repair-slots-per-tick", type=int, default=1)
     experiment.add_argument("--stale-penalty", type=float, default=DEFAULT_STALE_PENALTY,
                             help="λ: cost charged per answer that used a stale source (default: 10)")
+    _add_budget_arguments(experiment)
     experiment.add_argument("--measure-latency", action="store_true",
                             help="record wall-clock query latency (non-deterministic)")
     experiment.add_argument("--output", type=Path, required=True, help="new results CSV (must not exist)")
@@ -187,6 +200,8 @@ def main(argv: list[str] | None = None) -> None:
                 refresh_interval_events=args.refresh_interval_events,
                 repair_slots_per_tick=args.repair_slots_per_tick,
                 measure_latency=args.measure_latency, stale_penalty=args.stale_penalty,
+                budget_units=args.budget, budget_window_seconds=args.budget_window_seconds,
+                queue_order=args.queue_order,
             ), RESULT_FIELDS)
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
@@ -289,12 +304,17 @@ def main(argv: list[str] | None = None) -> None:
 
             retriever = HybridRetriever(retriever, BGEM3FaissRetriever())
 
+        budget = None
+        if getattr(args, "budget", None) is not None:
+            budget = RepairBudget(args.budget, args.budget_window_seconds, args.queue_order,
+                                  origin=SYNTHETIC_START)
         result = Simulator(
             ledger,
             summaries,
             retriever,
             policy,
             config,
+            budget=budget,
         ).run(events)
 
         if args.jsonl:
@@ -309,6 +329,8 @@ def main(argv: list[str] | None = None) -> None:
             for row in result.logs:
                 print(json.dumps(row, sort_keys=True))
 
+        if result.budget is not None:
+            print("budget " + " ".join(f"{key}={value}" for key, value in result.budget.items()))
         print(
             f"policy={policy.name} "
             f"queries={result.queries} "
