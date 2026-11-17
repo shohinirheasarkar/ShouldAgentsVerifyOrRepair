@@ -25,6 +25,7 @@ from verify_repair.policies.base import (
 )
 from verify_repair.retrieval.base import Retriever
 from verify_repair.retrieval.hybrid import HybridRetriever
+from verify_repair.simulator.budget import BudgetState, RepairBudget
 from verify_repair.simulator.events import (
     CorrectionEvent,
     ExpiryEvent,
@@ -61,6 +62,8 @@ class RunResult:
     stale_source_uses: int
     # Wall-clock milliseconds per query, in trace order; empty unless measured.
     query_latency_ms: list[float] = field(default_factory=list)
+    # Budget accounting (deferrals, queue, waits); None unless a budget is set.
+    budget: dict | None = None
 
 
 class Simulator:
@@ -73,6 +76,7 @@ class Simulator:
         config: RunConfig = RunConfig(),
         *,
         measure_latency: bool = False,
+        budget: RepairBudget | None = None,
     ):
         """Set ``measure_latency`` to time each query from retrieval through
         query-time maintenance. It excludes correction-time and scheduled
@@ -85,6 +89,7 @@ class Simulator:
         self.policy = policy
         self.config = config
         self.measure_latency = measure_latency
+        self.budget = budget
         self.prediction_config = getattr(policy, "prediction_config", None)
         self.access_history = (
             AccessHistoryStore(summaries.db, self.prediction_config.half_life_seconds)
@@ -208,6 +213,13 @@ class Simulator:
         config_snapshot = asdict(self.config)
         if self.prediction_config is not None:
             config_snapshot["prediction"] = asdict(self.prediction_config)
+        if self.budget is not None:
+            config_snapshot["budget"] = self.budget.snapshot()
+        # Unbudgeted runs keep their pre-budget logs and hashes byte-identical.
+        state = None
+        if self.budget is not None:
+            origin = self.budget.origin or (ordered[0].timestamp if ordered else None)
+            state = BudgetState(self.budget, self.config.repair_cost_units, origin) if origin else None
         config_hash = hashlib.sha256(json.dumps(config_snapshot, sort_keys=True).encode()).hexdigest()
 
         run_data = (
@@ -230,6 +242,7 @@ class Simulator:
             evidence=None,
             maintenance_trigger=None,
             maintenance_tick=None,
+            budget_outcome=None,
         ):
             if isinstance(event, QueryEvent):
                 event_type = "query"
@@ -275,10 +288,62 @@ class Simulator:
                     "trace_hash": trace_hash,
                 }
             )
+            if state is not None:
+                result.logs[-1].update({
+                    "budget_window": state.window,
+                    "budget_remaining": state.remaining,
+                    "budget_outcome": budget_outcome,
+                })
+
+        def execute_repair(summary_id, at_time):
+            """Repair now, reserving c_r from the budget; None if the budget is exhausted."""
+            if state is None:
+                return self.maintenance.repair(summary_id, at_time)
+            if not state.can_afford():
+                return None
+            state.reserve()
+            try:
+                repaired = self.maintenance.repair(summary_id, at_time)
+            except BaseException:
+                state.refund()
+                raise
+            state.queue.pop(summary_id, None)
+            return repaired
+
+        def charged():
+            return "charged" if state is not None else None
+
+        def drain_queue(event):
+            """Spend a freshly reset budget on deferred repairs, best first."""
+            for entry in state.ordered(event.timestamp, self.config.verify_cost_units):
+                summary = self.summaries.get_summary(entry.summary_id)
+                if not summary.is_stale or summary.stale_episode_id != entry.episode_id:
+                    del state.queue[entry.summary_id]  # repaired or superseded elsewhere
+                    state.invalidated += 1
+                    continue
+                if not state.can_afford():
+                    break
+                execute_repair(entry.summary_id, event.timestamp)
+                state.executed_from_queue += 1
+                state.waits_seconds.append((event.timestamp - entry.enqueued_at).total_seconds())
+                result.repairs += 1
+                result.cumulative_repair_cost += self.config.repair_cost_units
+                log(
+                    event,
+                    summary_id=entry.summary_id,
+                    stale_before=True,
+                    episode=summary.stale_episode_id,
+                    action=MaintenanceAction.REPAIR,
+                    repair_cost=self.config.repair_cost_units,
+                    maintenance_trigger="deferred_queue",
+                    budget_outcome="charged",
+                )
 
         processed_event_count = 0
 
         for event in ordered:
+            if state is not None and state.roll(event.timestamp):
+                drain_queue(event)
             if isinstance(event, (CorrectionEvent, ExpiryEvent)):
                 if isinstance(event, ExpiryEvent):
                     history = self.ledger.get_history(event.fact_id)
@@ -356,28 +421,40 @@ class Simulator:
 
                 actions = self.policy.on_correction(affected)
 
-                targeted_ids = {
-                    summary_id
-                    for summary_id, _ in actions
-                }
+                targeted = [summary_id for summary_id, _ in actions]
 
-                if targeted_ids - set(affected):
+                # Validate the whole batch before any repair executes.
+                if set(targeted) - set(affected):
                     raise ValueError(
                         "policy targeted unaffected summary"
                     )
 
+                if any(action != MaintenanceAction.REPAIR for _, action in actions):
+                    raise ValueError(
+                        "correction hook may only schedule REPAIR"
+                    )
+
+                if len(targeted) != len(set(targeted)):
+                    raise ValueError("correction hook targeted a summary twice")
+
+                if state is not None:
+                    for summary_id in affected:  # queued requests follow the new episode
+                        state.retag(summary_id, self.summaries.get_summary(summary_id).stale_episode_id)
+
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    if action != MaintenanceAction.REPAIR:
-                        raise ValueError(
-                            "correction hook may only schedule REPAIR"
+                    if execute_repair(summary_id, event.timestamp) is None:
+                        state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
+                                      event.timestamp, "correction")
+                        log(
+                            event,
+                            summary_id=summary_id,
+                            stale_before=stale.is_stale,
+                            episode=stale.stale_episode_id,
+                            budget_outcome="deferred",
                         )
-
-                    self.maintenance.repair(
-                        summary_id,
-                        event.timestamp,
-                    )
+                        continue
 
                     result.repairs += 1
                     result.cumulative_repair_cost += (
@@ -391,6 +468,7 @@ class Simulator:
                         episode=stale.stale_episode_id,
                         action=action,
                         repair_cost=self.config.repair_cost_units,
+                        budget_outcome=charged(),
                     )
 
             else:
@@ -415,6 +493,7 @@ class Simulator:
                     verify_cost = 0.0
                     repair_cost = 0.0
                     evidence = None
+                    outcome = None
 
                     evidence_refs = self.summaries.get_source_facts(
                         hit.summary_id
@@ -432,6 +511,17 @@ class Simulator:
                                     demand_prediction=prediction,
                                 ),
                             )
+
+                            if action == MaintenanceAction.REPAIR:
+                                repaired = execute_repair(hit.summary_id, event.timestamp)
+                                if repaired is None:
+                                    # Out of budget: answer from current facts, repair later.
+                                    state.enqueue(hit.summary_id, summary.stale_episode_id,
+                                                  summary.stale_since, event.timestamp, "query")
+                                    action = MaintenanceAction.VERIFY
+                                    outcome = "deferred"
+                                else:
+                                    outcome = charged()
 
                             if action == MaintenanceAction.VERIFY:
                                 verified = self.maintenance.verify(
@@ -453,11 +543,6 @@ class Simulator:
                                 )
 
                             elif action == MaintenanceAction.REPAIR:
-                                repaired = self.maintenance.repair(
-                                    hit.summary_id,
-                                    event.timestamp,
-                                )
-
                                 evidence_refs = repaired.source_refs
                                 repair_cost = (
                                     self.config.repair_cost_units
@@ -505,7 +590,10 @@ class Simulator:
                         used_stale=used_stale,
                         required_current=required_current,
                         evidence=evidence,
+                        budget_outcome=outcome,
                     )
+                    if state is not None:
+                        state.observe(hit.summary_id, event.timestamp)
 
                 if self.measure_latency:
                     elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -552,10 +640,19 @@ class Simulator:
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    self.maintenance.repair(
-                        summary_id,
-                        event.timestamp,
-                    )
+                    if execute_repair(summary_id, event.timestamp) is None:
+                        state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
+                                      event.timestamp, "tick")
+                        log(
+                            event,
+                            summary_id=summary_id,
+                            stale_before=stale.is_stale,
+                            episode=stale.stale_episode_id,
+                            maintenance_trigger="scheduled_tick",
+                            maintenance_tick=processed_event_count,
+                            budget_outcome="deferred",
+                        )
+                        continue
 
                     result.repairs += 1
                     result.cumulative_repair_cost += (
@@ -571,6 +668,24 @@ class Simulator:
                         repair_cost=self.config.repair_cost_units,
                         maintenance_trigger="scheduled_tick",
                         maintenance_tick=processed_event_count,
+                        budget_outcome=charged(),
                     )
 
+        if state is not None:
+            waits = sorted(state.waits_seconds)
+            result.budget = {
+                "units": self.budget.units,
+                "window_seconds": self.budget.window_seconds,
+                "queue_order": self.budget.queue_order,
+                "spent": state.spent,
+                "max_window_spend": max(state.spent_by_window.values(), default=0.0),
+                "deferrals": state.deferrals,
+                "executed_from_queue": state.executed_from_queue,
+                "requeued": state.requeued,
+                "invalidated": state.invalidated,
+                "still_queued": len(state.queue),
+                "peak_queue": state.peak_queue,
+                "mean_wait_s": sum(waits) / len(waits) if waits else None,
+                "max_wait_s": waits[-1] if waits else None,
+            }
         return result
