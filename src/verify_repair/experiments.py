@@ -17,16 +17,24 @@ from pathlib import Path
 from statistics import mean, stdev
 
 from verify_repair.demand import PredictionConfig
-from verify_repair.evaluation import score_synthetic_run
+from verify_repair.evaluation import (
+    ORACLE_STALE_ALLOWED, ORACLE_VERIFY_REPAIR, score_evolving_run, score_synthetic_run,
+)
 from verify_repair.policies.accumulated_threshold import AccumulatedThreshold
 from verify_repair.policies.eager_refresh import EagerRefresh
 from verify_repair.policies.oldest_first import OldestFirst
 from verify_repair.policies.periodic_refresh import PeriodicRefresh
+from verify_repair.policies.periodic_refresh_stale import PeriodicRefreshStale
 from verify_repair.policies.predicted_threshold import PredictedThreshold
 from verify_repair.policies.repair_on_first_access import RepairOnFirstAccess
 from verify_repair.policies.verify_only import VerifyOnly
 from verify_repair.simulator.engine import Simulator
-from verify_repair.simulator.synthetic import load_synthetic, read_synthetic, synthetic_run_config
+from verify_repair.simulator.evolving import (
+    FORMAT_VERSION as EVOLVING_FORMAT, EvolvingWorkload, evolving_run_config, load_evolving, read_workload,
+)
+from verify_repair.simulator.synthetic import (
+    FORMAT_VERSION as SYNTHETIC_FORMAT, load_synthetic, synthetic_run_config,
+)
 
 POLICY_NAMES = (
     "verify-only",
@@ -36,18 +44,29 @@ POLICY_NAMES = (
     "oldest-first",
     "p1",
     "p2",
+    "periodic-refresh-stale",
 )
+# Policies that may answer from a stale summary; scored with λ and the
+# stale-allowed oracle (synthetic-v2 only).
+STALE_USE_POLICIES = frozenset({"periodic-refresh-stale"})
+DEFAULT_STALE_PENALTY = 10.0
 
 # Settings and identifiers that define one replay; summaries group on these.
 RUN_KEYS = (
-    "memories", "policy", "verify_cost", "repair_cost", "cost_ratio",
-    "refresh_interval_events", "repair_slots_per_tick", "group",
+    "workload_format", "memories", "policy", "verify_cost", "repair_cost", "cost_ratio",
+    "stale_penalty", "oracle", "refresh_interval_events", "repair_slots_per_tick", "group",
 )
+# Columns added after the midterm; older CSVs without them still summarize.
+LEGACY_DEFAULTS = {"workload_format": SYNTHETIC_FORMAT, "stale_penalty": "0.0",
+                   "oracle": ORACLE_VERIFY_REPAIR}
 METRICS = (
     "queries", "verifications", "repairs", "verify_cost_total", "repair_cost_total",
     "stale_source_uses", "total_cost", "oracle_cost", "regret", "cost_vs_oracle",
     "latency_p50_ms", "latency_p95_ms", "latency_p99_ms",
     "maintenance_latency_p95_ms", "no_maintenance_latency_p95_ms",
+    "episodes", "stale_cost", "relaxed_oracle_episodes", "stale_exposure_hours",
+    "repaired_episodes", "mean_time_to_repair_s", "p95_time_to_repair_s",
+    "peak_backlog", "mean_backlog",
 )
 RESULT_FIELDS = (
     "dataset_id", "seed", "workload_sha256", "run_id", "config_hash", "trace_hash",
@@ -73,6 +92,8 @@ def make_policy(
         return OldestFirst(refresh_interval_events, repair_slots_per_tick)
     if name == "periodic-refresh":
         return PeriodicRefresh(refresh_interval_events)
+    if name == "periodic-refresh-stale":
+        return PeriodicRefreshStale(refresh_interval_events)
     if name == "p2":
         return PredictedThreshold(prediction_config or PredictionConfig())
     simple = {
@@ -88,35 +109,51 @@ def make_policy(
 
 def run_experiment(
     workload_paths: list[Path],
-    policies: list[str],
+    policies: list[str] | None,
     cost_pairs: list[tuple[float, float]],
     *,
     refresh_interval_events: int = 100,
     repair_slots_per_tick: int = 1,
     measure_latency: bool = False,
+    stale_penalty: float = DEFAULT_STALE_PENALTY,
 ) -> Iterator[dict]:
     """Yield result rows; every policy replays identical saved inputs.
 
-    Demands are read only by the scorer after each replay finishes.
+    Accepts synthetic-v1 and synthetic-v2 workloads. ``policies=None`` runs
+    every policy that applies to each workload's format (stale-use policies
+    need v2 scoring). Demand labels and episode metadata are read only by the
+    scorer after each replay finishes.
     """
-    for name in policies:
+    for name in policies or POLICY_NAMES:
         make_policy(name, refresh_interval_events, repair_slots_per_tick)  # fail before replay
     for path in workload_paths:
         raw = Path(path).read_bytes()
-        workload = read_synthetic(path)
-        base = synthetic_run_config(workload)
+        workload = read_workload(path)
+        evolving = isinstance(workload, EvolvingWorkload)
+        names = list(policies) if policies is not None else [
+            name for name in POLICY_NAMES if evolving or name not in STALE_USE_POLICIES]
+        if not evolving and STALE_USE_POLICIES & set(names):
+            raise ValueError("stale-use policies need synthetic-v2 workloads (multi-episode scoring)")
+        base = evolving_run_config(workload) if evolving else synthetic_run_config(workload)
         for verify_cost, repair_cost in cost_pairs:
             config = replace(base, verify_cost_units=verify_cost, repair_cost_units=repair_cost)
-            for name in policies:
+            for name in names:
                 policy = make_policy(name, refresh_interval_events, repair_slots_per_tick)
-                db, ledger, summaries, retriever, events = load_synthetic(workload)
+                db, ledger, summaries, retriever, events = (
+                    load_evolving(workload) if evolving else load_synthetic(workload))
                 try:
                     result = Simulator(ledger, summaries, retriever, policy, config,
                                        measure_latency=measure_latency).run(events)
                 finally:
                     db.close()
+                stale_use = name in STALE_USE_POLICIES
+                if evolving:
+                    scores, _ = score_evolving_run(workload, result, verify_cost, repair_cost, stale_penalty,
+                                                   allow_stale_use=stale_use)
+                else:
+                    scores = score_synthetic_run(workload, result, verify_cost, repair_cost, stale_penalty)
                 first = result.logs[0]
-                for score in score_synthetic_run(workload, result, verify_cost, repair_cost):
+                for score in scores:
                     values = asdict(score)
                     yield {
                         "dataset_id": workload.config.dataset_id(),
@@ -125,11 +162,14 @@ def run_experiment(
                         "run_id": first["run_id"],
                         "config_hash": first["config_hash"],
                         "trace_hash": first["trace_hash"],
+                        "workload_format": EVOLVING_FORMAT if evolving else SYNTHETIC_FORMAT,
                         "memories": workload.config.num_memories,
                         "policy": policy.name,
                         "verify_cost": verify_cost,
                         "repair_cost": repair_cost,
                         "cost_ratio": repair_cost / verify_cost if verify_cost else None,
+                        "stale_penalty": stale_penalty,
+                        "oracle": ORACLE_STALE_ALLOWED if stale_use else ORACLE_VERIFY_REPAIR,
                         "refresh_interval_events": refresh_interval_events,
                         "repair_slots_per_tick": repair_slots_per_tick,
                         "group": score.group,
@@ -180,7 +220,7 @@ def summarize_rows(rows: list[dict]) -> list[dict]:
     """Average result rows across seeds for each setting, policy, and group."""
     grouped = defaultdict(list)
     for row in rows:
-        grouped[tuple(row[key] for key in RUN_KEYS)].append(row)
+        grouped[tuple(row.get(key, LEGACY_DEFAULTS.get(key)) for key in RUN_KEYS)].append(row)
     summary = []
     for key, members in grouped.items():
         seeds = [row["seed"] for row in members]
@@ -188,7 +228,7 @@ def summarize_rows(rows: list[dict]) -> list[dict]:
             raise ValueError(f"duplicate seed for setting {key}")
         out = dict(zip(RUN_KEYS, key), seeds=len(members))
         for metric in METRICS:
-            values = [float(row[metric]) for row in members if row[metric] not in ("", None)]
+            values = [float(row[metric]) for row in members if row.get(metric) not in ("", None)]
             if len(values) != len(members):
                 out[f"{metric}_mean"] = out[f"{metric}_ci95"] = None
                 continue

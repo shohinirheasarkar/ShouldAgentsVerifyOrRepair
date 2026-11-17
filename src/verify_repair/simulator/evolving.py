@@ -135,6 +135,11 @@ def _horizon_micros(config: EvolvingConfig) -> int:
     return round(config.horizon_hours * MICROS_PER_HOUR)
 
 
+def horizon_end(config: EvolvingConfig) -> datetime:
+    """The instant the trace ends; every event lies strictly before it."""
+    return START + timedelta(microseconds=_horizon_micros(config))
+
+
 def _phase_bounds(config: EvolvingConfig) -> list[tuple[int, int]]:
     horizon, phases = _horizon_micros(config), config.phases
     return [(horizon * p // phases, horizon * (p + 1) // phases) for p in range(phases)]
