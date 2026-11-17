@@ -19,14 +19,23 @@ from verify_repair.experiments import (
 )
 from verify_repair.retrieval.hybrid import HybridRetriever
 from verify_repair.simulator.engine import RunConfig, Simulator
+from verify_repair.simulator.evolving import (
+    DEMAND_MODES,
+    EvolvingConfig,
+    EvolvingWorkload,
+    evolving_run_config,
+    generate_evolving,
+    load_evolving,
+    read_workload,
+)
 from verify_repair.simulator.synthetic import (
     GROUP_BOUNDS,
     SyntheticConfig,
     generate_synthetic,
     load_synthetic,
-    read_synthetic,
     synthetic_run_config,
 )
+from verify_repair.simulator.events import CorrectionEvent
 from verify_repair.simulator.toy import load_toy
 
 
@@ -115,6 +124,29 @@ def main(argv: list[str] | None = None) -> None:
         generate.add_argument(f"--{group}-queries", type=int, nargs=2, default=bounds,
                               metavar=("MIN", "MAX"), help=f"inclusive {group} query range; default: {bounds}")
     generate.add_argument("--output", type=Path, required=True, help="new workload file (must not exist)")
+    evolving = sub.add_parser("generate-evolving",
+                              help="create a seeded synthetic-v2 workload with repeated changes")
+    evolving.add_argument("--memories", type=int, default=100)
+    evolving.add_argument("--seed", type=int, default=12345)
+    evolving.add_argument("--group-counts", type=int, nargs=3, metavar=("COLD", "WARM", "HOT"))
+    for group, bounds in GROUP_BOUNDS.items():
+        evolving.add_argument(f"--{group}-queries", type=int, nargs=2, default=bounds,
+                              metavar=("MIN", "MAX"), help=f"inclusive {group} queries per phase")
+    evolving.add_argument("--demand-mode", choices=DEMAND_MODES, default="stable")
+    evolving.add_argument("--phases", type=int, default=2, help="demand phases (shifting only)")
+    evolving.add_argument("--horizon-hours", type=float, default=24.0)
+    evolving.add_argument("--changes-per-memory", type=float, default=2.0,
+                          help="Poisson mean number of source changes per memory over the horizon")
+    evolving.add_argument("--change-mix", type=float, nargs=4, default=(0.6, 0.2, 0.1, 0.1),
+                          metavar=("CORRECTION", "UPDATE", "RETRACTION", "TEMPORARY"))
+    evolving.add_argument("--exception-hours", type=float, default=1.0,
+                          help="mean temporary-exception duration")
+    evolving.add_argument("--facts-per-summary", type=int, nargs=2, default=(3, 3), metavar=("MIN", "MAX"))
+    evolving.add_argument("--burst-minutes", type=float, default=10.0, help="burst width (bursty only)")
+    evolving.add_argument("--fan-out", type=int, default=1, help="max summaries built on one fact")
+    evolving.add_argument("--shared-fact-rate", type=float, default=0.0,
+                          help="probability a memory also links one earlier memory's fact")
+    evolving.add_argument("--output", type=Path, required=True, help="new workload file (must not exist)")
     experiment = sub.add_parser("run-experiment",
                                 help="replay saved workloads under several policies and costs; write CSV")
     experiment.add_argument("--workload", type=Path, nargs="+", required=True)
@@ -179,6 +211,27 @@ def main(argv: list[str] | None = None) -> None:
               f"sha256={digest} output={args.output}")
         return
 
+    if args.command == "generate-evolving":
+        try:
+            workload = generate_evolving(EvolvingConfig(
+                num_memories=args.memories, seed=args.seed, group_counts=args.group_counts,
+                cold_queries=args.cold_queries, warm_queries=args.warm_queries, hot_queries=args.hot_queries,
+                demand_mode=args.demand_mode, num_phases=args.phases, horizon_hours=args.horizon_hours,
+                changes_per_memory=args.changes_per_memory, change_mix=args.change_mix,
+                exception_hours=args.exception_hours, facts_per_summary=args.facts_per_summary,
+                burst_minutes=args.burst_minutes, fan_out=args.fan_out,
+                shared_fact_rate=args.shared_fact_rate,
+            ))
+            digest = workload.write(args.output)
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+        changes = sum(isinstance(e, CorrectionEvent) for e in workload.events)
+        print(f"dataset={workload.config.dataset_id()} memories={workload.config.num_memories} "
+              f"changes={changes} questions={len(workload.events) - changes} "
+              f"episodes={len(workload.episodes)} demand={workload.config.demand_mode} "
+              f"seed={workload.config.seed} sha256={digest} output={args.output}")
+        return
+
     if args.command not in ("run-toy", "run-synthetic"):
         parser.print_help()
         return
@@ -203,8 +256,9 @@ def main(argv: list[str] | None = None) -> None:
                 or (args.jsonl.exists() and args.workload.exists() and args.jsonl.samefile(args.workload))
             ):
                 raise ValueError("--jsonl must differ from the input workload")
-            workload = read_synthetic(args.workload)
-            config = synthetic_run_config(workload)
+            workload = read_workload(args.workload)
+            evolving = isinstance(workload, EvolvingWorkload)
+            config = evolving_run_config(workload) if evolving else synthetic_run_config(workload)
         else:
             root = toy_root()
             config = load_config(root / "configs/toy.yaml")
@@ -216,7 +270,8 @@ def main(argv: list[str] | None = None) -> None:
             repair_cost_units=config.repair_cost_units if args.repair_cost is None else args.repair_cost,
         )
         if args.command == "run-synthetic":
-            db, ledger, summaries, retriever, events = load_synthetic(workload)
+            db, ledger, summaries, retriever, events = (
+                load_evolving(workload) if evolving else load_synthetic(workload))
         else:
             db, ledger, summaries, retriever, events = load_toy(root / "data/toy")
     except (ValueError, OSError) as exc:
