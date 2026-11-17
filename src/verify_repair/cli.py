@@ -8,6 +8,7 @@ from pathlib import Path
 from verify_repair.config import load_config
 from verify_repair.demand import PredictionConfig
 from verify_repair.experiments import (
+    DEFAULT_STALE_PENALTY,
     POLICY_NAMES,
     RESULT_FIELDS,
     make_policy,
@@ -150,12 +151,15 @@ def main(argv: list[str] | None = None) -> None:
     experiment = sub.add_parser("run-experiment",
                                 help="replay saved workloads under several policies and costs; write CSV")
     experiment.add_argument("--workload", type=Path, nargs="+", required=True)
-    experiment.add_argument("--policies", nargs="+", choices=POLICY_NAMES, default=list(POLICY_NAMES))
+    experiment.add_argument("--policies", nargs="+", choices=POLICY_NAMES,
+                            help="default: every policy that applies to each workload's format")
     experiment.add_argument("--verify-cost", type=float, default=1.0, help="nominal cost per verification")
     experiment.add_argument("--repair-costs", type=float, nargs="+", default=[5.0],
                             help="nominal repair costs to sweep (one replay per value)")
     experiment.add_argument("--refresh-interval-events", type=int, default=100)
     experiment.add_argument("--repair-slots-per-tick", type=int, default=1)
+    experiment.add_argument("--stale-penalty", type=float, default=DEFAULT_STALE_PENALTY,
+                            help="λ: cost charged per answer that used a stale source (default: 10)")
     experiment.add_argument("--measure-latency", action="store_true",
                             help="record wall-clock query latency (non-deterministic)")
     experiment.add_argument("--output", type=Path, required=True, help="new results CSV (must not exist)")
@@ -174,17 +178,19 @@ def main(argv: list[str] | None = None) -> None:
             # Validate every setting before creating the output file.
             for pair in cost_pairs:
                 replace(RunConfig(), verify_cost_units=pair[0], repair_cost_units=pair[1])
-            for name in args.policies:
+            for name in args.policies or POLICY_NAMES:
                 make_policy(name, args.refresh_interval_events, args.repair_slots_per_tick)
+            if args.stale_penalty < 0:
+                raise ValueError("--stale-penalty must be nonnegative")
             rows = write_rows(args.output, run_experiment(
                 args.workload, args.policies, cost_pairs,
                 refresh_interval_events=args.refresh_interval_events,
                 repair_slots_per_tick=args.repair_slots_per_tick,
-                measure_latency=args.measure_latency,
+                measure_latency=args.measure_latency, stale_penalty=args.stale_penalty,
             ), RESULT_FIELDS)
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
-        print(f"rows={rows} workloads={len(args.workload)} policies={len(args.policies)} "
+        print(f"rows={rows} workloads={len(args.workload)} policies={len(args.policies) if args.policies else 'all'} "
               f"repair_costs={args.repair_costs} verify_cost={args.verify_cost:g} output={args.output}")
         return
 
