@@ -5,6 +5,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from verify_repair.budget_oracle import EXACT, GREEDY
 from verify_repair.config import load_config
 from verify_repair.demand import PredictionConfig
 from verify_repair.experiments import (
@@ -173,6 +174,8 @@ def main(argv: list[str] | None = None) -> None:
     experiment.add_argument("--stale-penalty", type=float, default=DEFAULT_STALE_PENALTY,
                             help="λ: cost charged per answer that used a stale source (default: 10)")
     _add_budget_arguments(experiment)
+    experiment.add_argument("--budget-oracle", choices=(EXACT, GREEDY), default=EXACT,
+                            help="budget-aware reference; greedy is a heuristic, not a lower bound")
     experiment.add_argument("--measure-latency", action="store_true",
                             help="record wall-clock query latency (non-deterministic)")
     experiment.add_argument("--output", type=Path, required=True, help="new results CSV (must not exist)")
@@ -201,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
                 repair_slots_per_tick=args.repair_slots_per_tick,
                 measure_latency=args.measure_latency, stale_penalty=args.stale_penalty,
                 budget_units=args.budget, budget_window_seconds=args.budget_window_seconds,
-                queue_order=args.queue_order,
+                queue_order=args.queue_order, budget_oracle_method=args.budget_oracle,
             ), RESULT_FIELDS)
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
