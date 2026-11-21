@@ -318,6 +318,29 @@ and be summarized together. The oracle formula assumes the synthetic-v1
 contract (one correction per memory before its queries); repeated corrections
 and a budget-aware oracle are future work.
 
+## Local LLM mode (Step 5)
+
+Optional local-LLM VERIFY, REPAIR, and fixed Answer Reader generation use 4-bit
+NF4 `Qwen/Qwen2.5-7B-Instruct` via `transformers` + `bitsandbytes` (targeting
+UMD Zaratan GPU nodes; `--mode deterministic` remains the default and never
+imports LLM dependencies):
+
+```bash
+python -m pip install '.[dev,llm]'
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m verify_repair.cli run-toy \
+  --policy verify-only --mode llm \
+  --llm-model Qwen/Qwen2.5-7B-Instruct --llm-quantization nf4 \
+  --answers-jsonl /tmp/toy-verify-answers.jsonl \
+  --save-llm-manifest /tmp/runtime-manifest.json
+RUN_LLM=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -o addopts='' -m llm
+```
+
+Offline validation (no GPU or model downloads) runs in default `pytest -q` and
+via `python scripts/run_canonical_llm.py --mode fake`. See
+[`docs/step5/README.md`](docs/step5/README.md) for Zaratan weight prefetch
+(`scripts/prefetch_llm_model.py`) and Slurm batch submission
+(`scripts/zaratan_step5.sbatch`).
+
 ## Tutorial notebooks
 - to be added -
 

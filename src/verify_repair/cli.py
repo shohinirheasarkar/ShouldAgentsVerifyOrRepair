@@ -109,6 +109,53 @@ def _add_run_arguments(
         type=Path,
         help="write structured event records",
     )
+    run.add_argument(
+        "--mode",
+        choices=("deterministic", "llm"),
+        default="deterministic",
+        help="maintenance/reader mode (default: deterministic template mode)",
+    )
+    run.add_argument(
+        "--llm-model",
+        type=str,
+        help="HuggingFace model ID for --mode llm (default: Qwen/Qwen2.5-7B-Instruct)",
+    )
+    run.add_argument(
+        "--llm-revision",
+        type=str,
+        help="optional pinned HuggingFace commit SHA for --mode llm",
+    )
+    run.add_argument(
+        "--llm-quantization",
+        choices=("nf4", "none"),
+        help="quantization mode for --mode llm (default: nf4)",
+    )
+    run.add_argument(
+        "--llm-dtype",
+        choices=("auto", "float16", "bfloat16"),
+        help="compute dtype for --mode llm (default: auto)",
+    )
+    run.add_argument(
+        "--llm-timeout",
+        type=float,
+        help="per-call LLM generation timeout in seconds (default: 60)",
+    )
+    run.add_argument(
+        "--llm-max-retries",
+        type=int,
+        help="validation retry limit per LLM call (default: 1)",
+    )
+    run.add_argument(
+        "--answers-jsonl",
+        type=Path,
+        help="write per-query generated answers, evidence refs, and event-time scores (--mode llm)",
+    )
+    run.add_argument(
+        "--save-llm-manifest",
+        type=Path,
+        help="write model/runtime/quantization/hardware/prompt manifest JSON (--mode llm)",
+    )
+
 
 
 def _add_budget_arguments(parser: argparse.ArgumentParser) -> None:
@@ -268,6 +315,40 @@ def main(argv: list[str] | None = None) -> None:
         }
         if args.policy != "p2" and any(value is not None for value in prediction_options.values()):
             raise ValueError("--p2-* options require --policy p2")
+
+        llm_options = (
+            args.llm_model,
+            args.llm_revision,
+            args.llm_quantization,
+            args.llm_dtype,
+            args.llm_timeout,
+            args.llm_max_retries,
+            args.answers_jsonl,
+            args.save_llm_manifest,
+        )
+        if args.mode == "deterministic" and any(value is not None for value in llm_options):
+            raise ValueError("--llm-*, --answers-jsonl, and --save-llm-manifest require --mode llm")
+
+        llm_config = None
+        if args.mode == "llm":
+            from verify_repair.llm.client import DEFAULT_MODEL_ID, LLMConfig
+
+            llm_config = LLMConfig(
+                backend="hf-4bit",
+                model_id=args.llm_model if args.llm_model is not None else DEFAULT_MODEL_ID,
+                model_revision=args.llm_revision,
+                quantization=args.llm_quantization if args.llm_quantization is not None else "nf4",
+                compute_dtype=args.llm_dtype if args.llm_dtype is not None else "auto",
+                timeout_seconds=args.llm_timeout if args.llm_timeout is not None else 60.0,
+                max_retries=args.llm_max_retries if args.llm_max_retries is not None else 1,
+            )
+            for out_path, flag in (
+                (args.answers_jsonl, "--answers-jsonl"),
+                (args.save_llm_manifest, "--save-llm-manifest"),
+            ):
+                if out_path is not None and out_path.exists():
+                    raise ValueError(f"{flag} {out_path} already exists")
+
         policy = make_policy(
             args.policy, args.refresh_interval_events, args.repair_slots_per_tick,
             PredictionConfig(**{
@@ -275,11 +356,16 @@ def main(argv: list[str] | None = None) -> None:
             }) if args.policy == "p2" else None,
         )
         if args.command == "run-synthetic":
-            if args.jsonl and (
-                args.jsonl.resolve() == args.workload.resolve()
-                or (args.jsonl.exists() and args.workload.exists() and args.jsonl.samefile(args.workload))
+            for out_path, flag in (
+                (args.jsonl, "--jsonl"),
+                (args.answers_jsonl, "--answers-jsonl"),
+                (args.save_llm_manifest, "--save-llm-manifest"),
             ):
-                raise ValueError("--jsonl must differ from the input workload")
+                if out_path and (
+                    out_path.resolve() == args.workload.resolve()
+                    or (out_path.exists() and args.workload.exists() and out_path.samefile(args.workload))
+                ):
+                    raise ValueError(f"{flag} must differ from the input workload")
             workload = read_workload(args.workload)
             evolving = isinstance(workload, EvolvingWorkload)
             config = evolving_run_config(workload) if evolving else synthetic_run_config(workload)
@@ -293,6 +379,8 @@ def main(argv: list[str] | None = None) -> None:
             verify_cost_units=config.verify_cost_units if args.verify_cost is None else args.verify_cost,
             repair_cost_units=config.repair_cost_units if args.repair_cost is None else args.repair_cost,
         )
+        if llm_config is not None:
+            llm_config = replace(llm_config, seed=config.seed)
         if args.command == "run-synthetic":
             db, ledger, summaries, retriever, events = (
                 load_evolving(workload) if evolving else load_synthetic(workload))
@@ -307,6 +395,21 @@ def main(argv: list[str] | None = None) -> None:
 
             retriever = HybridRetriever(retriever, BGEM3FaissRetriever())
 
+        summary_builder = None
+        verifier = None
+        answer_reader = None
+        llm_runtime_info = None
+        if llm_config is not None:
+            from verify_repair.llm.client import HuggingFace4BitClient
+            from verify_repair.llm.operations import LLMSummaryBuilder, LLMVerifier
+            from verify_repair.llm.reader import AnswerReader
+
+            client = HuggingFace4BitClient(llm_config)
+            llm_runtime_info = client.runtime_info()
+            verifier = LLMVerifier(client)
+            summary_builder = LLMSummaryBuilder(client)
+            answer_reader = AnswerReader(client)
+
         budget = None
         if getattr(args, "budget", None) is not None:
             budget = RepairBudget(args.budget, args.budget_window_seconds, args.queue_order,
@@ -318,6 +421,11 @@ def main(argv: list[str] | None = None) -> None:
             policy,
             config,
             budget=budget,
+            summary_builder=summary_builder,
+            verifier=verifier,
+            answer_reader=answer_reader,
+            llm_config=llm_config,
+            llm_runtime_info=llm_runtime_info,
         ).run(events)
 
         if args.jsonl:
@@ -328,12 +436,46 @@ def main(argv: list[str] | None = None) -> None:
                 ), encoding="utf-8",
             )
 
+        answer_summary = None
+        if answer_reader is not None:
+            from dataclasses import asdict
+            from verify_repair.answer_scoring import score_run_answers
+
+            answer_scores, answer_summary = score_run_answers(ledger, events, result)
+            if args.answers_jsonl:
+                with args.answers_jsonl.open("x", encoding="utf-8") as stream:
+                    for score in answer_scores:
+                        stream.write(json.dumps(score.to_dict(), sort_keys=True) + "\n")
+            if args.save_llm_manifest:
+                manifest = {
+                    "policy": policy.name,
+                    "dataset_id": config.dataset_id,
+                    "seed": config.seed,
+                    "llm_config": llm_config.snapshot(),
+                    "runtime_info": llm_runtime_info,
+                    "answer_summary": asdict(answer_summary),
+                }
+                with args.save_llm_manifest.open("x", encoding="utf-8") as stream:
+                    stream.write(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
         if args.verbose:
             for row in result.logs:
                 print(json.dumps(row, sort_keys=True))
 
         if result.budget is not None:
             print("budget " + " ".join(f"{key}={value}" for key, value in result.budget.items()))
+        if answer_summary is not None:
+            em = f"{answer_summary.exact_match_mean:.3f}" if answer_summary.exact_match_mean is not None else "n/a"
+            f1 = f"{answer_summary.token_f1_mean:.3f}" if answer_summary.token_f1_mean is not None else "n/a"
+            print(
+                f"answers={answer_summary.total_queries} "
+                f"exact_match={em} "
+                f"token_f1={f1} "
+                f"abstentions={answer_summary.abstention_count} "
+                f"outdated_fact_errors={answer_summary.outdated_fact_error_count} "
+                f"prompt_tokens={answer_summary.total_prompt_tokens} "
+                f"completion_tokens={answer_summary.total_completion_tokens}"
+            )
         print(
             f"policy={policy.name} "
             f"queries={result.queries} "

@@ -64,6 +64,8 @@ class RunResult:
     query_latency_ms: list[float] = field(default_factory=list)
     # Budget accounting (deferrals, queue, waits); None unless a budget is set.
     budget: dict | None = None
+    # Per-query generated answers; empty unless an AnswerReader is configured.
+    answers: list[dict] = field(default_factory=list)
 
 
 class Simulator:
@@ -77,11 +79,17 @@ class Simulator:
         *,
         measure_latency: bool = False,
         budget: RepairBudget | None = None,
+        summary_builder=None,
+        verifier=None,
+        answer_reader=None,
+        llm_config=None,
+        llm_runtime_info: dict | None = None,
     ):
         """Set ``measure_latency`` to time each query from retrieval through
-        query-time maintenance. It excludes correction-time and scheduled
-        repairs (background work). Timing is the only non-deterministic log
-        field, so it stays off unless requested.
+        query-time maintenance (and answer generation when ``answer_reader`` is
+        configured). It excludes correction-time and scheduled repairs
+        (background work). Timing is the only non-deterministic log field, so
+        it stays off unless requested.
         """
         self.ledger = ledger
         self.summaries = summaries
@@ -90,6 +98,10 @@ class Simulator:
         self.config = config
         self.measure_latency = measure_latency
         self.budget = budget
+        self.verifier = verifier
+        self.answer_reader = answer_reader
+        self.llm_config = llm_config
+        self.llm_runtime_info = dict(llm_runtime_info) if llm_runtime_info is not None else None
         self.prediction_config = getattr(policy, "prediction_config", None)
         self.access_history = (
             AccessHistoryStore(summaries.db, self.prediction_config.half_life_seconds)
@@ -124,6 +136,7 @@ class Simulator:
         self.maintenance = MaintenanceService(
             ledger,
             summaries,
+            builder=summary_builder,
             verify_cost_units=config.verify_cost_units,
             repair_cost_units=config.repair_cost_units,
             semantic_index_update=(
@@ -132,6 +145,7 @@ class Simulator:
             semantic_index_rebuild=(
                 rebuild_semantic if semantic else None
             ),
+            verifier=verifier,
         )
 
     @contextmanager
@@ -215,7 +229,9 @@ class Simulator:
             config_snapshot["prediction"] = asdict(self.prediction_config)
         if self.budget is not None:
             config_snapshot["budget"] = self.budget.snapshot()
-        # Unbudgeted runs keep their pre-budget logs and hashes byte-identical.
+        if self.llm_config is not None:
+            config_snapshot["llm"] = self.llm_config.snapshot()
+        # Unbudgeted/deterministic runs keep their logs and hashes byte-identical.
         state = None
         if self.budget is not None:
             origin = self.budget.origin or (ordered[0].timestamp if ordered else None)
@@ -228,6 +244,21 @@ class Simulator:
             + trace_hash
         ).encode()
         run_id = hashlib.sha256(run_data).hexdigest()[:16]
+
+        def _merge_usage(first: dict | None, second: dict | None) -> dict | None:
+            if first is None:
+                return dict(second) if second is not None else None
+            if second is None:
+                return dict(first)
+            wall_a, wall_b = first.get("wall_ms"), second.get("wall_ms")
+            gpu_a, gpu_b = first.get("gpu_ms"), second.get("gpu_ms")
+            return {
+                "prompt_tokens": int(first.get("prompt_tokens", 0)) + int(second.get("prompt_tokens", 0)),
+                "completion_tokens": int(first.get("completion_tokens", 0)) + int(second.get("completion_tokens", 0)),
+                "total_tokens": int(first.get("total_tokens", 0)) + int(second.get("total_tokens", 0)),
+                "wall_ms": (wall_a + wall_b) if (wall_a is not None and wall_b is not None) else None,
+                "gpu_ms": (gpu_a + gpu_b) if (gpu_a is not None and gpu_b is not None) else None,
+            }
 
         def log(
             event,
@@ -243,6 +274,8 @@ class Simulator:
             maintenance_trigger=None,
             maintenance_tick=None,
             budget_outcome=None,
+            llm_usage=None,
+            llm_metadata=None,
         ):
             if isinstance(event, QueryEvent):
                 event_type = "query"
@@ -294,6 +327,10 @@ class Simulator:
                     "budget_remaining": state.remaining,
                     "budget_outcome": budget_outcome,
                 })
+            if llm_usage is not None:
+                result.logs[-1]["llm_usage"] = llm_usage
+            if llm_metadata is not None:
+                result.logs[-1]["maintenance_llm_metadata"] = llm_metadata
 
         def execute_repair(summary_id, at_time):
             """Repair now, reserving c_r from the budget; None if the budget is exhausted."""
@@ -323,7 +360,7 @@ class Simulator:
                     continue
                 if not state.can_afford():
                     break
-                execute_repair(entry.summary_id, event.timestamp)
+                repaired = execute_repair(entry.summary_id, event.timestamp)
                 state.executed_from_queue += 1
                 state.waits_seconds.append((event.timestamp - entry.enqueued_at).total_seconds())
                 result.repairs += 1
@@ -337,6 +374,8 @@ class Simulator:
                     repair_cost=self.config.repair_cost_units,
                     maintenance_trigger="deferred_queue",
                     budget_outcome="charged",
+                    llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
+                    llm_metadata=repaired.llm_metadata,
                 )
 
         processed_event_count = 0
@@ -444,7 +483,8 @@ class Simulator:
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    if execute_repair(summary_id, event.timestamp) is None:
+                    repaired = execute_repair(summary_id, event.timestamp)
+                    if repaired is None:
                         state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
                                       event.timestamp, "correction")
                         log(
@@ -469,6 +509,8 @@ class Simulator:
                         action=action,
                         repair_cost=self.config.repair_cost_units,
                         budget_outcome=charged(),
+                        llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
+                        llm_metadata=repaired.llm_metadata,
                     )
 
             else:
@@ -481,8 +523,22 @@ class Simulator:
                     event.top_k,
                 )
 
+                question_text = None
+                if self.verifier is not None or self.answer_reader is not None:
+                    from verify_repair.llm.reader import render_reader_question
+
+                    question_text = render_reader_question(event, self.ledger)
+
                 if not hits:
                     log(event, required_current=False)
+
+                query_summary_ids: list[str] = []
+                query_actions: list[str] = []
+                query_evidence_blocks: list[str] = []
+                query_evidence_modes: list[str] = []
+                query_source_refs: dict[str, object] = {}
+                query_used_stale = False
+                query_required_current = False
 
                 for hit in hits:
                     summary = self.summaries.get_summary(
@@ -494,6 +550,9 @@ class Simulator:
                     repair_cost = 0.0
                     evidence = None
                     outcome = None
+                    verified = None
+                    repaired = None
+                    maint_meta = None
 
                     evidence_refs = self.summaries.get_source_facts(
                         hit.summary_id
@@ -524,15 +583,23 @@ class Simulator:
                                     outcome = charged()
 
                             if action == MaintenanceAction.VERIFY:
-                                verified = self.maintenance.verify(
-                                    hit.summary_id,
-                                    event.timestamp,
-                                )
+                                if self.verifier is not None:
+                                    verified = self.maintenance.verify(
+                                        hit.summary_id,
+                                        event.timestamp,
+                                        query_text=question_text,
+                                    )
+                                else:
+                                    verified = self.maintenance.verify(
+                                        hit.summary_id,
+                                        event.timestamp,
+                                    )
 
                                 evidence_refs = (
                                     verified.current_source_refs
                                 )
                                 evidence = verified.current_evidence
+                                maint_meta = verified.llm_metadata
                                 verify_cost = (
                                     self.config.verify_cost_units
                                 )
@@ -544,6 +611,7 @@ class Simulator:
 
                             elif action == MaintenanceAction.REPAIR:
                                 evidence_refs = repaired.source_refs
+                                maint_meta = repaired.llm_metadata
                                 repair_cost = (
                                     self.config.repair_cost_units
                                 )
@@ -591,9 +659,97 @@ class Simulator:
                         required_current=required_current,
                         evidence=evidence,
                         budget_outcome=outcome,
+                        llm_usage=maint_meta.get("usage") if maint_meta else None,
+                        llm_metadata=maint_meta,
                     )
                     if state is not None:
                         state.observe(hit.summary_id, event.timestamp)
+
+                    if self.answer_reader is not None:
+                        from verify_repair.llm.reader import format_authoritative_evidence
+
+                        query_summary_ids.append(hit.summary_id)
+                        query_actions.append(action.value)
+                        query_used_stale = query_used_stale or used_stale
+                        query_required_current = query_required_current or required_current
+                        if action == MaintenanceAction.VERIFY and verified is not None:
+                            hit_mode = "verified_evidence"
+                            hit_text = (
+                                verified.verified_context
+                                if verified.verified_context is not None
+                                else format_authoritative_evidence(
+                                    verified.current_evidence,
+                                    verified.current_source_refs,
+                                )
+                            )
+                        elif action == MaintenanceAction.REPAIR and repaired is not None:
+                            hit_mode = "repaired_summary"
+                            hit_text = repaired.text
+                        else:
+                            hit_mode = "stale_summary" if summary.is_stale else "fresh_summary"
+                            hit_text = summary.text
+                        query_evidence_modes.append(hit_mode)
+                        query_evidence_blocks.append(
+                            f"[{hit.summary_id}] {hit_text}" if len(hits) > 1 else hit_text
+                        )
+                        for slot, ref in evidence_refs.items():
+                            query_source_refs[f"{hit.summary_id}:{slot}"] = ref
+
+                if self.answer_reader is not None:
+                    from verify_repair.llm.reader import EvidencePacket, format_ref_labels
+
+                    if not hits:
+                        packet_mode = "no_retrieval"
+                        packet_text = ""
+                        ref_labels: tuple[str, ...] = ()
+                    else:
+                        packet_mode = (
+                            query_evidence_modes[0]
+                            if len(set(query_evidence_modes)) == 1
+                            else "mixed"
+                        )
+                        packet_text = "\n".join(query_evidence_blocks)
+                        ref_labels = format_ref_labels(query_source_refs)
+
+                    packet = EvidencePacket(
+                        query_id=event.query_id,
+                        question_text=question_text or event.query_text,
+                        summary_ids=tuple(query_summary_ids),
+                        evidence_mode=packet_mode,
+                        evidence_text=packet_text,
+                        source_ref_labels=ref_labels,
+                    )
+                    answer = self.answer_reader.answer(packet)
+                    answer_record = {
+                        "query_id": answer.query_id,
+                        "event_id": event.event_id,
+                        "event_timestamp": stamp(event.timestamp),
+                        "summary_ids": list(query_summary_ids),
+                        "actions": list(query_actions),
+                        "evidence_mode": answer.evidence_mode,
+                        "used_stale_source": query_used_stale,
+                        "required_fact_current": query_required_current if hits else False,
+                        "question_text": answer.question_text,
+                        "answer_text": answer.answer_text,
+                        "abstained": answer.abstained,
+                        "cited_sources": list(answer.cited_sources),
+                        "evidence_refs": list(answer.evidence_refs),
+                        "prompt_id": answer.prompt_id,
+                        "prompt_version": answer.prompt_version,
+                        "llm_metadata": answer.llm_metadata,
+                    }
+                    result.answers.append(answer_record)
+                    last_row = result.logs[-1]
+                    last_row["answer"] = answer.answer_text
+                    last_row["answer_abstained"] = answer.abstained
+                    last_row["answer_cited_sources"] = list(answer.cited_sources)
+                    last_row["evidence_refs"] = list(answer.evidence_refs)
+                    last_row["evidence_mode"] = answer.evidence_mode
+                    last_row["reader_llm_metadata"] = answer.llm_metadata
+                    last_row["llm_usage"] = _merge_usage(
+                        last_row.get("llm_usage"),
+                        answer.llm_metadata.get("usage"),
+                    )
 
                 if self.measure_latency:
                     elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -640,7 +796,8 @@ class Simulator:
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    if execute_repair(summary_id, event.timestamp) is None:
+                    repaired = execute_repair(summary_id, event.timestamp)
+                    if repaired is None:
                         state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
                                       event.timestamp, "tick")
                         log(
@@ -669,6 +826,8 @@ class Simulator:
                         maintenance_trigger="scheduled_tick",
                         maintenance_tick=processed_event_count,
                         budget_outcome=charged(),
+                        llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
+                        llm_metadata=repaired.llm_metadata,
                     )
 
         if state is not None:

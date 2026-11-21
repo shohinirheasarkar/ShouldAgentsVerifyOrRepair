@@ -169,3 +169,37 @@ def test_p2_options_are_not_silently_ignored_for_other_policies(capsys):
         main(["run-toy", "--policy", "p1", "--p2-horizon-seconds", "100"])
     assert error.value.code == 2
     assert "require --policy p2" in capsys.readouterr().err
+
+
+def test_llm_options_rejected_in_deterministic_mode_before_opening_db(monkeypatch, capsys):
+    def unexpected_load(*args):
+        pytest.fail("invalid LLM CLI flags must fail before opening SQLite")
+
+    monkeypatch.setattr("verify_repair.cli.load_toy", unexpected_load)
+    with pytest.raises(SystemExit) as error:
+        main(["run-toy", "--policy", "verify-only", "--llm-model", "Qwen/Qwen2.5-7B-Instruct"])
+    assert error.value.code == 2
+    assert "require --mode llm" in capsys.readouterr().err
+
+
+def test_llm_invalid_timeout_and_existing_output_rejected_before_loading_model(
+    tmp_path, monkeypatch, capsys
+):
+    def unexpected_load(*args):
+        pytest.fail("invalid LLM config must fail before opening SQLite")
+
+    monkeypatch.setattr("verify_repair.cli.load_toy", unexpected_load)
+    with pytest.raises(SystemExit) as error:
+        main(["run-toy", "--policy", "verify-only", "--mode", "llm", "--llm-timeout", "0"])
+    assert error.value.code == 2
+    assert "timeout_seconds" in capsys.readouterr().err
+
+    existing = tmp_path / "already_exists.jsonl"
+    existing.write_text("existing\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as error2:
+        main([
+            "run-toy", "--policy", "verify-only", "--mode", "llm",
+            "--answers-jsonl", str(existing),
+        ])
+    assert error2.value.code == 2
+    assert "already exists" in capsys.readouterr().err

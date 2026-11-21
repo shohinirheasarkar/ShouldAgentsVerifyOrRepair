@@ -13,6 +13,7 @@ dependencies = ["PyYAML>=6", "scipy>=1.11"]
 dev = ["pytest>=8"]
 semantic = ["faiss-cpu>=1.8", "FlagEmbedding>=1.2"]
 analysis = ["matplotlib>=3.7"]
+llm = ["torch>=2.3", "transformers>=4.46", "accelerate>=0.34", "bitsandbytes>=0.44"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -20,5 +21,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-markers = ["semantic: requires optional BGE-M3 model and FAISS"]
-addopts = "-m 'not semantic'"
+markers = [
+    "semantic: requires optional BGE-M3 model and FAISS",
+    "llm: requires optional local LLM runtime and model weights",
+]
+addopts = "-m 'not semantic and not llm'"

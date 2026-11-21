@@ -83,3 +83,19 @@ class RepairBuildError(ValueError):
 
 class RetrievalIndexError(RuntimeError):
     pass
+
+
+class LLMError(RuntimeError):
+    """Base error for optional local LLM generation failures."""
+
+
+class LLMTimeoutError(LLMError, TimeoutError):
+    """Raised when local LLM generation exceeds its configured deadline."""
+
+
+class LLMVerificationError(LLMError):
+    """Raised when LLM VERIFY output fails schema, citation, or grounding validation."""
+
+
+class LLMValidationError(RepairBuildError, LLMError):
+    """Raised when LLM REPAIR or AnswerReader output fails validation."""
