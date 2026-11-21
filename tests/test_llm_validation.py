@@ -287,3 +287,33 @@ def test_validate_reader_output_and_prompts_include_injection_guard():
     sys_r, user_r = build_repair_prompt(req)
     assert "untrusted data" in sys_v.lower() and "untrusted data" in sys_r.lower()
     assert "<authoritative_facts>" in user_v and "<authoritative_facts>" in user_r
+
+
+def test_offline_snapshot_resolution_without_refs_main(tmp_path):
+    from verify_repair.llm.client import _resolve_offline_source
+
+    sha = "a09a35458c702b33eeacc393d103063234e8bc28"
+    snap = tmp_path / "models--Qwen--Qwen2.5-7B-Instruct" / "snapshots" / sha
+    snap.mkdir(parents=True)
+    (snap / "config.json").write_text("{}", encoding="utf-8")
+
+    # Offline with revision=None and no refs/main -> resolves single cached snapshot dir + SHA
+    resolved_path, resolved_rev = _resolve_offline_source(
+        "Qwen/Qwen2.5-7B-Instruct", None, local_only=True, hub_cache_dir=tmp_path
+    )
+    assert resolved_path == str(snap)
+    assert resolved_rev == sha
+
+    # Offline with explicit pinned SHA -> resolves directly to snapshot dir
+    resolved_path2, resolved_rev2 = _resolve_offline_source(
+        "Qwen/Qwen2.5-7B-Instruct", sha, local_only=True, hub_cache_dir=tmp_path
+    )
+    assert resolved_path2 == str(snap)
+    assert resolved_rev2 == sha
+
+    # Online mode leaves repo ID untouched
+    resolved_online, rev_online = _resolve_offline_source(
+        "Qwen/Qwen2.5-7B-Instruct", None, local_only=False, hub_cache_dir=tmp_path
+    )
+    assert resolved_online == "Qwen/Qwen2.5-7B-Instruct"
+    assert rev_online is None

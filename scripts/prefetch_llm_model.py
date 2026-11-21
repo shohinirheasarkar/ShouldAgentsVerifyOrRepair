@@ -29,9 +29,11 @@ def main(argv: list[str] | None = None) -> None:
     api = HfApi()
     info = api.model_info(args.model, revision=args.revision)
     commit_sha = info.sha
+    # Pass args.revision (None -> "main") when unpinned so huggingface_hub writes refs/main
+    # in addition to the snapshot directory, while still recording the exact commit_sha.
     local_dir = snapshot_download(
         repo_id=args.model,
-        revision=commit_sha,
+        revision=args.revision if args.revision is not None else "main",
     )
     record = {
         "model_id": args.model,

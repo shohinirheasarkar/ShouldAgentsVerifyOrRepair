@@ -2,7 +2,7 @@
 #SBATCH --job-name=verify-repair-step5
 #SBATCH --account=cmsc848n-class
 #SBATCH --partition=gpu
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:h100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=00:30:00
@@ -13,18 +13,18 @@
 # Prerequisites (run once on a Zaratan login node):
 #   1. Clone repo under /scratch/zt1/project/cmsc848n/user/$USER/ShouldAgentsVerifyOrRepair
 #   2. Create Python 3.11+ venv under /scratch/zt1/project/cmsc848n/user/$USER/venv-llm
-#      with `python -m pip install '.[dev,llm]'`
+#      with `uv pip install '.[dev,llm]'`
 #   3. Download Qwen2.5-7B-Instruct once into /scratch/zt1/project/cmsc848n/user/$USER/hf_cache:
-#        python scripts/prefetch_llm_model.py --model Qwen/Qwen2.5-7B-Instruct
+#        python scripts/prefetch_llm_model.py --model Qwen/Qwen2.5-7B-Instruct \
+#          --output-json /scratch/zt1/project/cmsc848n/user/$USER/hf_cache/qwen25_7b_snapshot.json
 # Submit from repository root:
 #   sbatch scripts/zaratan_step5.sbatch
 
 set -euo pipefail
 
-# Load Zaratan Python 3.11+ and CUDA modules if available on compute nodes.
+# Load Zaratan CUDA module; Python 3.11+ comes from VENV_DIR on scratch (e.g., via `uv`).
 if command -v module >/dev/null 2>&1; then
   module purge
-  module load python/3.11 2>/dev/null || module load python
   module load cuda
 fi
 
@@ -34,14 +34,23 @@ VENV_DIR="${VENV_DIR:-${SCRATCH_BASE}/venv-llm}"
 HF_HOME="${HF_HOME:-${SCRATCH_BASE}/hf_cache}"
 OUT_DIR="${OUT_DIR:-${REPO_DIR}/docs/step5/zaratan_${SLURM_JOB_ID:-local}}"
 MODEL_ID="${LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}"
-MODEL_REV_ARGS=()
-if [[ -n "${LLM_REVISION:-}" ]]; then
-  MODEL_REV_ARGS=(--llm-revision "${LLM_REVISION}")
-fi
 
 if [[ ! -d "${HF_HOME}" ]]; then
   echo "ERROR: HF_HOME directory ${HF_HOME} does not exist; run scripts/prefetch_llm_model.py on a login node first" >&2
   exit 1
+fi
+
+source "${VENV_DIR}/bin/activate"
+
+# Auto-pin the exact commit SHA saved by scripts/prefetch_llm_model.py when LLM_REVISION is unset.
+if [[ -z "${LLM_REVISION:-}" && -f "${HF_HOME}/qwen25_7b_snapshot.json" ]]; then
+  LLM_REVISION="$(python -c "import json; print(json.load(open('${HF_HOME}/qwen25_7b_snapshot.json'))['model_revision'])")"
+  export LLM_REVISION
+fi
+
+MODEL_REV_ARGS=()
+if [[ -n "${LLM_REVISION:-}" ]]; then
+  MODEL_REV_ARGS=(--llm-revision "${LLM_REVISION}")
 fi
 
 export HF_HOME
@@ -50,7 +59,6 @@ export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="${REPO_DIR}/src"
 
-source "${VENV_DIR}/bin/activate"
 mkdir -p "${OUT_DIR}"
 
 echo "=== Environment ==="

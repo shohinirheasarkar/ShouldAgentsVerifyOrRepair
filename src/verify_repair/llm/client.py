@@ -140,6 +140,63 @@ def _env_offline() -> bool:
     )
 
 
+def _resolve_offline_source(
+    model_id: str,
+    model_revision: str | None,
+    *,
+    local_only: bool,
+    hub_cache_dir: str | os.PathLike[str] | None = None,
+) -> tuple[str, str | None]:
+    """Resolve a cached local HF snapshot directory when running offline.
+
+    Returns ``(path_or_repo_id, resolved_revision)``. Passing the concrete local
+    snapshot directory directly avoids ``huggingface_hub`` ``refs/main`` lookups
+    when a model was prefetched by commit SHA.
+    """
+    if not local_only or os.path.isdir(model_id):
+        return model_id, model_revision
+
+    from pathlib import Path
+
+    if hub_cache_dir is not None:
+        hub_cache = Path(hub_cache_dir)
+    elif os.getenv("HF_HUB_CACHE"):
+        hub_cache = Path(os.environ["HF_HUB_CACHE"])
+    elif os.getenv("HF_HOME"):
+        hub_cache = Path(os.environ["HF_HOME"]) / "hub"
+    else:
+        hub_cache = Path.home() / ".cache" / "huggingface" / "hub"
+
+    repo_cache = hub_cache / ("models--" + model_id.replace("/", "--"))
+    snapshots_dir = repo_cache / "snapshots"
+    if not snapshots_dir.is_dir():
+        return model_id, model_revision
+
+    if model_revision is not None:
+        direct = snapshots_dir / model_revision
+        if direct.is_dir():
+            return str(direct), model_revision
+        ref_file = repo_cache / "refs" / model_revision
+        if ref_file.is_file():
+            sha = ref_file.read_text(encoding="utf-8").strip()
+            target = snapshots_dir / sha
+            if sha and target.is_dir():
+                return str(target), sha
+        return model_id, model_revision
+
+    refs_main = repo_cache / "refs" / "main"
+    if refs_main.is_file():
+        sha = refs_main.read_text(encoding="utf-8").strip()
+        target = snapshots_dir / sha
+        if sha and target.is_dir():
+            return str(target), sha
+
+    snapshots = sorted(p for p in snapshots_dir.iterdir() if p.is_dir())
+    if len(snapshots) == 1:
+        return str(snapshots[0]), snapshots[0].name
+    return model_id, model_revision
+
+
 class HuggingFace4BitClient:
     """Local HuggingFace ``transformers`` + ``bitsandbytes`` 4-bit NF4 adapter.
 
@@ -186,10 +243,16 @@ class HuggingFace4BitClient:
 
         self._resolved_dtype = resolved_dtype
 
+        resolved_model_arg, effective_revision = _resolve_offline_source(
+            config.model_id,
+            config.model_revision,
+            local_only=local_only,
+        )
+
         tokenizer_kwargs: dict[str, Any] = {"local_files_only": local_only}
-        if config.model_revision is not None:
-            tokenizer_kwargs["revision"] = config.model_revision
-        self._tokenizer = AutoTokenizer.from_pretrained(config.model_id, **tokenizer_kwargs)
+        if effective_revision is not None and not os.path.isdir(resolved_model_arg):
+            tokenizer_kwargs["revision"] = effective_revision
+        self._tokenizer = AutoTokenizer.from_pretrained(resolved_model_arg, **tokenizer_kwargs)
         if self._tokenizer.pad_token_id is None and self._tokenizer.eos_token_id is not None:
             self._tokenizer.pad_token_id = self._tokenizer.eos_token_id
 
@@ -197,8 +260,8 @@ class HuggingFace4BitClient:
             "device_map": "auto",
             "local_files_only": local_only,
         }
-        if config.model_revision is not None:
-            model_kwargs["revision"] = config.model_revision
+        if effective_revision is not None and not os.path.isdir(resolved_model_arg):
+            model_kwargs["revision"] = effective_revision
         if config.quantization == "nf4":
             import bitsandbytes
 
@@ -213,10 +276,10 @@ class HuggingFace4BitClient:
             self._bnb_version = None
             model_kwargs["torch_dtype"] = compute_dtype if torch.cuda.is_available() else torch.float32
 
-        self._model = AutoModelForCausalLM.from_pretrained(config.model_id, **model_kwargs)
+        self._model = AutoModelForCausalLM.from_pretrained(resolved_model_arg, **model_kwargs)
         self._model.eval()
 
-        resolved_revision = config.model_revision or getattr(
+        resolved_revision = effective_revision or getattr(
             getattr(self._model, "config", None), "_commit_hash", None
         )
         self._resolved_revision: str | None = resolved_revision
