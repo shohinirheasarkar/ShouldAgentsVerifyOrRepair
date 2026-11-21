@@ -1,14 +1,56 @@
-"""Template-only summary builder; missing/retracted slots render as [retracted]."""
+"""Summary builders: deterministic template builder and contextual repair protocol.
+
+Inputs: template/slot facts (deterministic) or ``RepairBuildRequest`` with old
+summary text, old/current ``FactVersion`` records, and changed slots (LLM).
+Outputs: rebuilt summary text (and validated claims/metadata for contextual
+builders). Missing/retracted deterministic slots render as ``[retracted]``.
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from string import Formatter
-from typing import Protocol
+from typing import Any, Protocol
 
-from verify_repair.models import RepairBuildError
+from verify_repair.models import FactVersion, RepairBuildError
 
 
 class SummaryBuilder(Protocol):
     def build(self, template: str, current_facts: dict[str, str | None]) -> str: ...
+
+
+@dataclass(frozen=True)
+class RepairClaim:
+    """One validated summary claim linked to an exact current fact version."""
+
+    slot: str
+    statement: str
+    source_ref: str
+
+
+@dataclass(frozen=True)
+class RepairBuildRequest:
+    """Authoritative inputs for contextual (e.g., LLM) summary repair."""
+
+    summary_id: str
+    old_text: str
+    text_template: str
+    old_facts: dict[str, FactVersion]
+    current_facts: dict[str, FactVersion]
+    changed_slots: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RepairBuildOutput:
+    """Validated rebuilt summary text, source-linked claims, and telemetry."""
+
+    text: str
+    claims: tuple[RepairClaim, ...]
+    fidelity: dict[str, float]
+    llm_metadata: dict[str, Any] | None = None
+
+
+class ContextualSummaryBuilder(Protocol):
+    def build_repair(self, request: RepairBuildRequest) -> RepairBuildOutput: ...
 
 
 class DeterministicTemplateSummaryBuilder:
