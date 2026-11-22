@@ -71,31 +71,24 @@ python -m pytest -q
 echo "=== 2. Opt-in live 4-bit LLM integration test ==="
 RUN_LLM=1 python -m pytest -o addopts='' -m llm -v
 
-echo "=== 3. Step 5.6 canonical Maryland->Boston end-to-end check ==="
-python scripts/run_canonical_llm.py \
+echo "=== 3. Step 5.6 canonical + full toy suite (single model load) ==="
+python scripts/run_step5_artifacts.py \
   --mode llm \
   --llm-model "${MODEL_ID}" \
   "${MODEL_REV_ARGS[@]}" \
   --llm-quantization nf4 \
   --llm-dtype auto \
-  --output "${OUT_DIR}/canonical_maryland_boston.json"
+  --llm-max-retries 2 \
+  --output-dir "${OUT_DIR}"
 
-echo "=== 4. Toy trace under local LLM (verify-only, eager-refresh, repair-on-first-access, periodic-refresh-stale) ==="
-for policy in verify-only eager-refresh repair-on-first-access periodic-refresh-stale; do
-  MANIFEST_ARGS=()
-  if [[ "${policy}" == "verify-only" ]]; then
-    MANIFEST_ARGS=(--save-llm-manifest "${OUT_DIR}/runtime_manifest.json")
-  fi
-  python -m verify_repair.cli run-toy \
-    --policy "${policy}" \
-    --mode llm \
-    --llm-model "${MODEL_ID}" \
-    "${MODEL_REV_ARGS[@]}" \
-    --llm-quantization nf4 \
-    --llm-dtype auto \
-    --jsonl "${OUT_DIR}/toy_${policy}_logs.jsonl" \
-    --answers-jsonl "${OUT_DIR}/toy_${policy}_answers.jsonl" \
-    "${MANIFEST_ARGS[@]}"
-done
+echo "=== 4. Standalone CLI toy smoke command (Step 5.1) ==="
+python -m verify_repair.cli run-toy \
+  --policy verify-only \
+  --mode llm \
+  --llm-model "${MODEL_ID}" \
+  "${MODEL_REV_ARGS[@]}" \
+  --llm-quantization nf4 \
+  --llm-dtype auto \
+  --answers-jsonl "${OUT_DIR}/cli_smoke_verify_only_answers.jsonl"
 
 echo "=== Step 5 Zaratan validation complete: ${OUT_DIR} ==="

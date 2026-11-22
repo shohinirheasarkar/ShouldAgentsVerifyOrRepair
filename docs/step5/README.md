@@ -8,7 +8,7 @@ This step adds an opt-in local LLM mode (`--mode llm`) for **VERIFY**, **REPAIR*
 - **Default model:** `Qwen/Qwen2.5-7B-Instruct` (Apache 2.0, ungated; `--llm-model` also supports `meta-llama/Llama-3.1-8B-Instruct`).
 - **Runtime & quantization:** `transformers` + `bitsandbytes` 4-bit NF4 (`load_in_4bit=True`, `bnb_4bit_quant_type="nf4"`, `bnb_4bit_use_double_quant=True`, `bnb_4bit_compute_dtype="auto"` → `bfloat16` on A100/H100, `float16` on older GPUs).
 - **Decoding:** greedy deterministic (`do_sample=False`, `temperature=None`, `top_p=None`), explicit per-role token caps (`verify=256`, `repair=512` scaling up to `1024` for wide `synthetic-v2` summaries, `reader=128`), per-call `StoppingCriteria` timeout (`--llm-timeout`, default `60s`), bounded validation retry (`--llm-max-retries`, default `1`).
-- **Versioned prompts:** `PROMPT_VERSION = "llm-prompts-v2"` in `src/verify_repair/llm/prompts.py`; its SHA-256 `prompt_bundle_sha256()` is logged in `config_snapshot["llm"]` and `--save-llm-manifest`. All retrieved evidence and source facts are wrapped in XML data tags with explicit untrusted-data guards.
+- **Versioned prompts:** `PROMPT_VERSION = "llm-prompts-v3"` in `src/verify_repair/llm/prompts.py`; its SHA-256 `prompt_bundle_sha256()` is logged in `config_snapshot["llm"]` and `--save-llm-manifest`. All retrieved evidence and source facts are wrapped in XML data tags with explicit untrusted-data guards.
 
 ## Operations and scoring semantics
 
