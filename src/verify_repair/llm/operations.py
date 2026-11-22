@@ -85,6 +85,7 @@ class LLMVerifier:
         feedback: str | None = None
         usages: list[LLMUsage] = []
         last_error: LLMVerificationError | None = None
+        last_raw: str = ""
         max_attempts = self.client.config.max_retries + 1
 
         for attempt in range(1, max_attempts + 1):
@@ -111,6 +112,7 @@ class LLMVerifier:
             except LLMTimeoutError:
                 raise
             usages.append(response.usage)
+            last_raw = response.text
             try:
                 validated = validate_verify_output(
                     response.text, old_facts, current_facts, changed_slots
@@ -138,8 +140,10 @@ class LLMVerifier:
             )
 
         assert last_error is not None
+        snippet = last_raw[:300]
         raise LLMVerificationError(
-            f"LLM VERIFY failed validation after {max_attempts} attempt(s): {last_error}"
+            f"LLM VERIFY failed validation after {max_attempts} attempt(s): {last_error} "
+            f"(last_output={snippet!r})"
         ) from last_error
 
 
@@ -158,6 +162,7 @@ class LLMSummaryBuilder:
         feedback: str | None = None
         usages: list[LLMUsage] = []
         last_error: LLMValidationError | None = None
+        last_raw: str = ""
         max_attempts = self.client.config.max_retries + 1
         # Scale token budget for wide synthetic-v2 summaries (up to 20 facts) while capping cleanly.
         effective_max_tokens = min(
@@ -184,6 +189,7 @@ class LLMSummaryBuilder:
             except LLMTimeoutError:
                 raise
             usages.append(response.usage)
+            last_raw = response.text
             try:
                 validated = validate_repair_output(response.text, request)
             except LLMValidationError as exc:
@@ -212,6 +218,8 @@ class LLMSummaryBuilder:
             )
 
         assert last_error is not None
+        snippet = last_raw[:300]
         raise LLMValidationError(
-            f"LLM REPAIR failed validation after {max_attempts} attempt(s): {last_error}"
+            f"LLM REPAIR failed validation after {max_attempts} attempt(s): {last_error} "
+            f"(last_output={snippet!r})"
         ) from last_error

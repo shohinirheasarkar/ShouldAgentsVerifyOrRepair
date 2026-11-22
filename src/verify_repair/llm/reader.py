@@ -124,6 +124,7 @@ class AnswerReader:
         feedback: str | None = None
         usages: list[LLMUsage] = []
         last_error: LLMValidationError | None = None
+        last_raw: str = ""
         max_attempts = self.client.config.max_retries + 1
         allowed_set = set(packet.source_ref_labels)
 
@@ -148,6 +149,7 @@ class AnswerReader:
             except LLMTimeoutError:
                 raise
             usages.append(response.usage)
+            last_raw = response.text
             try:
                 validated = validate_reader_output(response.text, allowed_set)
             except LLMValidationError as exc:
@@ -179,6 +181,8 @@ class AnswerReader:
             )
 
         assert last_error is not None
+        snippet = last_raw[:300]
         raise LLMValidationError(
-            f"AnswerReader failed validation after {max_attempts} attempt(s): {last_error}"
+            f"AnswerReader failed validation after {max_attempts} attempt(s): {last_error} "
+            f"(last_output={snippet!r})"
         ) from last_error

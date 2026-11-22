@@ -22,10 +22,23 @@ _RETRACTION_MARKERS = (
     "[retracted]",
     "removed",
     "unavailable",
+    "not available",
     "no longer available",
     "no longer",
     "unknown",
+    "not known",
     "none",
+    "deleted",
+    "withdrawn",
+    "unspecified",
+    "not specified",
+    "not provided",
+    "not listed",
+    "no information",
+    "no record",
+    "missing",
+    "redacted",
+    "cleared",
 )
 
 _ABSTENTION_MARKERS = frozenset({
@@ -80,6 +93,20 @@ def _has_retraction_marker(text: str) -> bool:
     return any(marker in lowered for marker in _RETRACTION_MARKERS)
 
 
+def _is_unchanged_identity_slot(
+    slot: str,
+    fact: FactVersion,
+    changed_set: set[str],
+) -> bool:
+    """True for an unchanged ``name`` slot whose value is simply the entity name itself."""
+    return (
+        slot not in changed_set
+        and fact.attribute == "name"
+        and fact.value is not None
+        and fact.value.strip().lower() == fact.entity.strip().lower()
+    )
+
+
 def extract_json_object(raw_text: str, *, error_cls: type[Exception] = LLMValidationError) -> dict:
     """Parse a single JSON object, stripping optional markdown code fences."""
     stripped = raw_text.strip()
@@ -125,7 +152,9 @@ def validate_verify_output(
             f"cited_sources contains unknown or superseded refs: {unknown_refs}"
         )
 
-    retracted_raw = parsed.get("retracted_slots", [])
+    retracted_raw = parsed.get("retracted_slots")
+    if retracted_raw is None:
+        retracted_raw = []
     if not isinstance(retracted_raw, list) or not all(isinstance(x, str) for x in retracted_raw):
         raise LLMVerificationError("retracted_slots must be a list of slot names")
     unknown_retracted = [slot for slot in retracted_raw if slot not in current_facts]
@@ -192,8 +221,10 @@ def validate_repair_output(
         raise LLMValidationError("claims must be a non-empty list of claim objects")
 
     seen_slots: set[str] = set()
-    claims: list[RepairClaim] = []
+    claims_by_slot: dict[str, RepairClaim] = {}
     expected_slots = set(request.current_facts)
+    changed_set = set(request.changed_slots)
+
     for item in claims_raw:
         if not isinstance(item, dict):
             raise LLMValidationError("each claim must be a JSON object")
@@ -215,9 +246,18 @@ def validate_repair_output(
                 f"claim for slot {slot!r} cited {source_ref!r}, expected exact current ref {expected_ref!r}"
             )
         seen_slots.add(slot)
-        claims.append(RepairClaim(slot=slot, statement=statement.strip(), source_ref=expected_ref))
+        claims_by_slot[slot] = RepairClaim(
+            slot=slot,
+            statement=statement.strip(),
+            source_ref=expected_ref,
+        )
 
-    missing_slots = sorted(expected_slots - seen_slots)
+    required_claim_slots = {
+        slot
+        for slot, fact in request.current_facts.items()
+        if not _is_unchanged_identity_slot(slot, fact, changed_set)
+    }
+    missing_slots = sorted(required_claim_slots - seen_slots)
     if missing_slots:
         raise LLMValidationError(f"claims missing required slots: {missing_slots}")
 
@@ -240,26 +280,26 @@ def validate_repair_output(
         if fact.value is not None
     } | {entity.strip().lower() for entity in entities_in_old}
 
-    changed_set = set(request.changed_slots)
     unchanged_total = 0
     unchanged_preserved = 0
     changed_total = 0
     changed_updated = 0
 
-    for claim in claims:
-        cur_fact = request.current_facts[claim.slot]
-        old_fact = request.old_facts.get(claim.slot)
-        is_changed = claim.slot in changed_set
+    for slot in sorted(request.current_facts):
+        cur_fact = request.current_facts[slot]
+        old_fact = request.old_facts.get(slot)
+        claim = claims_by_slot.get(slot)
+        is_changed = slot in changed_set
 
         if cur_fact.value is not None:
             if not contains_term(summary_text, cur_fact.value):
                 kind = "changed" if is_changed else "unchanged"
                 raise LLMValidationError(
-                    f"summary_text missing {kind} value {cur_fact.value!r} for slot {claim.slot!r}"
+                    f"summary_text missing {kind} value {cur_fact.value!r} for slot {slot!r}"
                 )
-            if not contains_term(claim.statement, cur_fact.value):
+            if claim is not None and not contains_term(claim.statement, cur_fact.value):
                 raise LLMValidationError(
-                    f"claim statement for slot {claim.slot!r} missing current value {cur_fact.value!r}"
+                    f"claim statement for slot {slot!r} missing current value {cur_fact.value!r}"
                 )
             if is_changed:
                 changed_total += 1
@@ -270,11 +310,11 @@ def validate_repair_output(
         else:
             if not _has_retraction_marker(summary_text):
                 raise LLMValidationError(
-                    f"summary_text must explicitly mark retracted slot {claim.slot!r} as retracted/unavailable"
+                    f"summary_text must explicitly mark retracted slot {slot!r} as retracted/unavailable"
                 )
-            if not _has_retraction_marker(claim.statement):
+            if claim is not None and not _has_retraction_marker(claim.statement):
                 raise LLMValidationError(
-                    f"claim statement for retracted slot {claim.slot!r} must state retraction"
+                    f"claim statement for retracted slot {slot!r} must state retraction"
                 )
             if is_changed:
                 changed_total += 1
@@ -291,10 +331,10 @@ def validate_repair_output(
             and contains_term(summary_text, old_fact.value)
         ):
             raise LLMValidationError(
-                f"summary_text retained superseded value {old_fact.value!r} for slot {claim.slot!r}"
+                f"summary_text retained superseded value {old_fact.value!r} for slot {slot!r}"
             )
 
-    claims_ordered = tuple(sorted(claims, key=lambda item: item.slot))
+    claims_ordered = tuple(claims_by_slot[slot] for slot in sorted(claims_by_slot))
     fidelity = {
         "unchanged_preserved_ratio": (
             unchanged_preserved / unchanged_total if unchanged_total else 1.0
@@ -319,7 +359,9 @@ def validate_reader_output(
     parsed = extract_json_object(raw_text, error_cls=LLMValidationError)
     answer = parsed.get("answer")
     abstained = parsed.get("abstained")
-    cited_raw = parsed.get("cited_sources", [])
+    cited_raw = parsed.get("cited_sources")
+    if cited_raw is None:
+        cited_raw = []
 
     if not isinstance(answer, str):
         raise LLMValidationError("reader output 'answer' must be a string")
