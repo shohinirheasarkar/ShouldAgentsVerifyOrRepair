@@ -8,7 +8,7 @@ This step adds an opt-in local LLM mode (`--mode llm`) for **VERIFY**, **REPAIR*
 - **Default model:** `Qwen/Qwen2.5-7B-Instruct` (Apache 2.0, ungated; `--llm-model` also supports `meta-llama/Llama-3.1-8B-Instruct`).
 - **Runtime & quantization:** `transformers` + `bitsandbytes` 4-bit NF4 (`load_in_4bit=True`, `bnb_4bit_quant_type="nf4"`, `bnb_4bit_use_double_quant=True`, `bnb_4bit_compute_dtype="auto"` → `bfloat16` on A100/H100, `float16` on older GPUs).
 - **Decoding:** greedy deterministic (`do_sample=False`, `temperature=None`, `top_p=None`), explicit per-role token caps (`verify=256`, `repair=512` scaling up to `1024` for wide `synthetic-v2` summaries, `reader=128`), per-call `StoppingCriteria` timeout (`--llm-timeout`, default `60s`), bounded validation retry (`--llm-max-retries`, default `1`).
-- **Versioned prompts:** `PROMPT_VERSION = "llm-prompts-v1"` in `src/verify_repair/llm/prompts.py`; its SHA-256 `prompt_bundle_sha256()` is logged in `config_snapshot["llm"]` and `--save-llm-manifest`. All retrieved evidence and source facts are wrapped in XML data tags with explicit untrusted-data guards.
+- **Versioned prompts:** `PROMPT_VERSION = "llm-prompts-v2"` in `src/verify_repair/llm/prompts.py`; its SHA-256 `prompt_bundle_sha256()` is logged in `config_snapshot["llm"]` and `--save-llm-manifest`. All retrieved evidence and source facts are wrapped in XML data tags with explicit untrusted-data guards.
 
 ## Operations and scoring semantics
 
@@ -38,17 +38,22 @@ git clone -b step5-local-llm https://github.com/shohinirheasarkar/ShouldAgentsVe
 cd ShouldAgentsVerifyOrRepair
 
 module purge
-module load python/3.11 2>/dev/null || module load python
 module load cuda
 
+export UV_CACHE_DIR="$SCRATCH_BASE/uv_cache"
+export UV_PYTHON_INSTALL_DIR="$SCRATCH_BASE/uv_python"
 export PIP_CACHE_DIR="$SCRATCH_BASE/pip_cache"
 export HF_HOME="$SCRATCH_BASE/hf_cache"
-mkdir -p "$PIP_CACHE_DIR" "$HF_HOME"
+mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$PIP_CACHE_DIR" "$HF_HOME"
 
-python3 -m venv "$SCRATCH_BASE/venv-llm"
+# Zaratan RHEL8 modules only ship Python 3.8/3.10; install standalone Python 3.11 on scratch via uv
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="$SCRATCH_BASE/bin" sh
+export PATH="$SCRATCH_BASE/bin:$PATH"
+
+uv venv --python 3.11 "$SCRATCH_BASE/venv-llm"
 source "$SCRATCH_BASE/venv-llm/bin/activate"
-python -m pip install --upgrade pip
-python -m pip install '.[dev,llm]'
+python --version   # Python 3.11.x
+uv pip install '.[dev,llm]'
 
 python scripts/prefetch_llm_model.py \
   --model Qwen/Qwen2.5-7B-Instruct \
