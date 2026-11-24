@@ -396,3 +396,54 @@ def test_validate_reader_accepts_null_cited_sources_on_abstention():
     out = validate_reader_output(raw, {"alice_location@v2"})
     assert out.abstained is True
     assert out.cited_sources == ()
+
+
+def test_validate_repair_retraction_phrasings_and_expiry_rollback():
+    old_ret = {"office": _fact("erin_office", 1, "Erin", "office", "Room E")}
+    cur_ret = {"office": _fact("erin_office", 2, "Erin", "office", None, ChangeType.RETRACTION)}
+    ret_req = RepairBuildRequest(
+        summary_id="erin_office",
+        old_text="Erin works in Room E.",
+        text_template="Erin works in {office}.",
+        old_facts=old_ret,
+        current_facts=cur_ret,
+        changed_slots=("office",),
+    )
+    for text, stmt in (
+        ("Erin does not have an assigned office.", "Erin does not have an office."),
+        ("Erin has no office.", "Erin has no office."),
+        ("Erin's office is unassigned.", "Office is unassigned."),
+    ):
+        raw = json.dumps({
+            "summary_text": text,
+            "claims": [{"slot": "office", "statement": stmt, "source_ref": "erin_office@v2"}],
+        })
+        out = validate_repair_output(raw, ret_req)
+        assert "Erin" in out.summary_text
+
+    # Temporary exception expiry: v2 (Room Z) reverts back to v1 (Room A).
+    old_exp = {"office": _fact("alice_office", 2, "Alice", "office", "Room Z", ChangeType.TEMPORARY_EXCEPTION)}
+    cur_exp = {"office": _fact("alice_office", 1, "Alice", "office", "Room A")}
+    exp_req = RepairBuildRequest(
+        summary_id="alice_office",
+        old_text="Alice works in Room Z.",
+        text_template="Alice works in {office}.",
+        old_facts=old_exp,
+        current_facts=cur_exp,
+        changed_slots=("office",),
+    )
+    reverted = json.dumps({
+        "summary_text": "Alice works in Room A.",
+        "claims": [{"slot": "office", "statement": "Alice works in Room A.", "source_ref": "alice_office@v1"}],
+    })
+    out_exp = validate_repair_output(reverted, exp_req)
+    assert out_exp.summary_text == "Alice works in Room A."
+    assert out_exp.claims[0].source_ref == "alice_office@v1"
+
+
+def test_reader_system_prompt_preserves_verified_stale_answering_contract():
+    from verify_repair.llm.prompts import READER_SYSTEM_PROMPT
+
+    assert "only describes a different attribute" not in READER_SYSTEM_PROMPT
+    assert "<required_claim_slots>" not in READER_SYSTEM_PROMPT
+    assert "using ONLY the facts explicitly stated in <evidence>" in READER_SYSTEM_PROMPT
