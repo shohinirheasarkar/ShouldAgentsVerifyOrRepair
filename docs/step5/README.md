@@ -106,7 +106,44 @@ python -m pytest -q
 python scripts/run_canonical_llm.py --mode fake
 ```
 
-## Status & next step
+## Live run results (Zaratan, November 24, 2026)
 
-- **Completed locally (offline):** Core LLM client/prompts/validators, `LLMVerifier`, `LLMSummaryBuilder`, frozen `AnswerReader`, event-time answer scoring, CLI `--mode llm` integration, Zaratan prefetch/Slurm scripts, and full offline regression suite.
-- **Pending Zaratan GPU run:** Execute `scripts/prefetch_llm_model.py` + `sbatch scripts/zaratan_step5.sbatch` on Zaratan to capture the live `runtime_manifest.json` and scored toy/canonical outputs into `docs/step5/`, then proceed to Step 6 (cost profiling & measured-cost replay).
+Job 24252063, code `d45e908` (branch `step5-6-llm-costs`), one NVIDIA H100
+80 GB, Python 3.11.13, torch 2.15.0+cu132, transformers 5.24.1, bitsandbytes
+0.50.2. `Qwen/Qwen2.5-7B-Instruct` revision
+`a09a35458c702b33eeacc393d103063234e8bc28`, NF4 4-bit with bfloat16 compute,
+greedy decoding, `llm-prompts-v4` (bundle SHA-256 `28cc06b7…`). Outputs and the
+job log are in [`zaratan_24252063/`](zaratan_24252063/).
+
+| Check | Result |
+| --- | --- |
+| Core offline suite on the GPU node | 712 passed, 2 deselected (Python 3.11) |
+| Live 4-bit integration test | passed |
+| **5.6** canonical Maryland → Boston | passed for all four policies (below) |
+| Toy trace, four policies | completed; scored answers saved |
+| **5.1** standalone CLI toy command | completed |
+
+Canonical check (`canonical_maryland_boston.json`):
+
+| Policy | VERIFY | REPAIR | Stored summary after the run | Exact match | Outdated-fact errors |
+| --- | --- | --- | --- | --- | --- |
+| Verify-Only | 3 | 0 | stale, "…living in Maryland." | 1.00 | 0 |
+| Eager Refresh | 0 | 2 | fresh, "…living in Boston." | 1.00 | 0 |
+| Repair-on-First-Access | 0 | 1 | fresh, "…living in Boston." | 1.00 | 0 |
+| Periodic-Refresh-Stale | 0 | 0 | stale, "…living in Maryland." | 0.00 | 3 |
+
+Per-call cost on the H100 (toy logs): reader about 0.41 s (~300 tokens),
+VERIFY about 0.53 s (~400 tokens), REPAIR 0.7–1.6 s (500–700 tokens), and
+3.9 s when a validation failure forces a second attempt. Loading the model
+from Zaratan's network file system takes about 6 minutes per process.
+
+**Known issue (toy trace).** Exact match on the full toy trace is 0.60 for
+Verify-Only, Eager Refresh, and Repair-on-First-Access. Both wrong answers are
+"What is the current office of Alice?": keyword retrieval returns Alice's
+*profile* summary instead of her office summary, and the v4 reader then answers
+with her location ("Boston") instead of abstaining. The v4 prompt removed the
+v3 rule "abstain if the evidence only describes a different attribute" (its
+test calls this preserving the verified/stale answering contract); this case
+shows the cost of that change. It is a retrieval miss plus a reader choice,
+not a maintenance-policy effect, and needs a team decision on the reader
+prompt.
