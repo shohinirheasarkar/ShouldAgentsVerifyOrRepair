@@ -106,6 +106,11 @@ def operation_stats(rows: list[dict]) -> dict:
         attempts = [a for a in attempts if a is not None]
         if attempts:
             entry["retried_operations"] = sum(a > 1 for a in attempts)
+        fallbacks = [r for r in chosen if (r.get("maintenance_llm_metadata") or {}).get("fallback")]
+        entry["fallbacks"] = len(fallbacks)
+        entry["fallback_examples"] = [
+            {"event_id": r["event_id"], "summary_id": r["summary_id"],
+             "error": r["maintenance_llm_metadata"]["error"]} for r in fallbacks[:5]]
         totals = [r["timing_ms"].get(f"{prefix}_total") for r in chosen if r.get("timing_ms")]
         totals = [t for t in totals if t is not None]
         if len(totals) > 1:
@@ -123,6 +128,10 @@ def operation_stats(rows: list[dict]) -> dict:
     reader = [r["timing_ms"]["reader"] for r in rows if "reader" in (r.get("timing_ms") or {})]
     stats["query_visible_latency_ms"] = {"all": distribution(latency), "with_maintenance": distribution(maintained),
                                          "without_maintenance": distribution(plain), "reader": distribution(reader)}
+    reader_fallbacks = [r for r in rows if (r.get("reader_llm_metadata") or {}).get("fallback")]
+    stats["reader_fallbacks"] = len(reader_fallbacks)
+    stats["reader_fallback_examples"] = [
+        {"query_id": r["query_id"], "error": r["reader_llm_metadata"]["error"]} for r in reader_fallbacks[:5]]
     background = [r["timing_ms"].get("total") for r in rows if r.get("query_visible") is False]
     stats["background_repair_ms"] = distribution([b for b in background if b is not None])
     return stats
@@ -149,7 +158,7 @@ def run_policy(stage, name, loader, run_config, llm, out, manifest, *, reader=Tr
     started = time.perf_counter()
     try:
         result = Simulator(ledger, summaries, retriever, make_policy(name), run_config,
-                           measure_latency=True, **llm).run(events)
+                           measure_latency=True, llm_fallback=bool(llm), **llm).run(events)
         write_jsonl(out / f"{stage}_{name}_logs.jsonl", result.logs)
         entry = {"queries": result.queries, "verifications": result.verifications, "repairs": result.repairs,
                  "stale_source_uses": result.stale_source_uses,
@@ -263,12 +272,16 @@ def main(argv=None) -> None:
     started = time.perf_counter()
     accesses = collect_stale_accesses(workload)
     judgments = []
+    reader_failures = []
     if llm and args.dirty_sample > 0:
         try:
-            judgments = judge_sample(accesses, llm["answer_reader"], args.dirty_sample, args.pilot_seed)
+            judgments = judge_sample(accesses, llm["answer_reader"], args.dirty_sample, args.pilot_seed,
+                                     failures=reader_failures)
         except Exception as exc:
             manifest["dirty_bit_failure"] = repr(exc)
     report = summarize(accesses, judgments)
+    report["reader_failures"] = len(reader_failures)
+    report["reader_failure_examples"] = reader_failures[:5]
     write_json(out / "dirty_bit_summary.json", report)
     if judgments:
         rows = [j.to_row() for j in judgments]

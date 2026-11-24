@@ -146,7 +146,9 @@ class AnswerReader:
             )
             try:
                 response = self.client.generate(request)
-            except LLMTimeoutError:
+            except LLMTimeoutError as exc:
+                exc.usage = _sum_usage(usages) if usages else None  # attempts so far
+                exc.attempts = attempt
                 raise
             usages.append(response.usage)
             last_raw = response.text
@@ -182,7 +184,10 @@ class AnswerReader:
 
         assert last_error is not None
         snippet = last_raw[:300]
-        raise LLMValidationError(
+        error = LLMValidationError(
             f"AnswerReader failed validation after {max_attempts} attempt(s): {last_error} "
             f"(last_output={snippet!r})"
-        ) from last_error
+        )
+        error.usage = _sum_usage(usages)  # tokens and time of the failed attempts
+        error.attempts = max_attempts
+        raise error from last_error

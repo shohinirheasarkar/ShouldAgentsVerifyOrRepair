@@ -5,6 +5,13 @@ Both operations also report wall-clock component timings in milliseconds
 validation retries), summary store and keyword-index update, semantic-index
 update, and the operation total. Timings never affect results; the simulator
 logs them only when latency measurement is requested.
+
+With ``llm_fallback=True``, an LLM VERIFY or REPAIR that still fails after its
+retries (validation failure or timeout) falls back to the deterministic
+operation: VERIFY returns the current facts without an LLM statement, and
+REPAIR rebuilds the summary from its template. The metadata records
+``fallback`` with the error and the failed attempts' usage, so the time spent
+is still charged. By default a failure raises and rolls back.
 """
 from __future__ import annotations
 
@@ -22,7 +29,7 @@ from verify_repair.maintenance.summary_builder import (
 )
 from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.summaries import SummaryStore
-from verify_repair.models import FactVersion, FactVersionRef
+from verify_repair.models import FactVersion, FactVersionRef, LLMError
 
 
 @dataclass(frozen=True)
@@ -64,13 +71,19 @@ def _ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000.0
 
 
+def _fallback_metadata(role: str, exc: BaseException) -> dict[str, Any]:
+    """Record a deterministic fallback after the LLM operation failed."""
+    return {"role": role, "fallback": "deterministic", "error": f"{type(exc).__name__}: {exc}"[:500],
+            "attempts": getattr(exc, "attempts", None), "usage": getattr(exc, "usage", None)}
+
+
 class MaintenanceService:
     def __init__(self, ledger: FactLedger, summaries: SummaryStore,
                  builder: SummaryBuilder | None = None, verify_cost_units: float = 1.0,
                  repair_cost_units: float = 5.0,
                  semantic_index_update: Callable[[str, str], None] | None = None,
                  semantic_index_rebuild: Callable[[], None] | None = None,
-                 verifier: Any | None = None):
+                 verifier: Any | None = None, llm_fallback: bool = False):
         self.ledger = ledger
         self.summaries = summaries
         self.builder = builder or DeterministicTemplateSummaryBuilder()
@@ -79,6 +92,7 @@ class MaintenanceService:
         self.semantic_index_update = semantic_index_update
         self.semantic_index_rebuild = semantic_index_rebuild
         self.verifier = verifier
+        self.llm_fallback = llm_fallback
 
     def verify(
         self,
@@ -115,17 +129,23 @@ class MaintenanceService:
             cited_sources = None
             llm_metadata = None
             if self.verifier is not None:
-                llm_out = self.verifier.verify(
-                    summary_id=summary_id,
-                    query_text=query_text or "",
-                    stored_summary_text=summary.text,
-                    old_facts=old_records,
-                    current_facts=current_records,
-                    changed_slots=tuple(change.slot_name for change in changes),
-                )
-                verified_context = llm_out.verified_evidence
-                cited_sources = llm_out.cited_sources
-                llm_metadata = llm_out.llm_metadata
+                try:
+                    llm_out = self.verifier.verify(
+                        summary_id=summary_id,
+                        query_text=query_text or "",
+                        stored_summary_text=summary.text,
+                        old_facts=old_records,
+                        current_facts=current_records,
+                        changed_slots=tuple(change.slot_name for change in changes),
+                    )
+                except LLMError as exc:
+                    if not self.llm_fallback:
+                        raise
+                    llm_metadata = _fallback_metadata("verify", exc)
+                else:
+                    verified_context = llm_out.verified_evidence
+                    cited_sources = llm_out.cited_sources
+                    llm_metadata = llm_out.llm_metadata
             timing["generation"] = _ms(generation_started)
 
             self.summaries.db.execute("""UPDATE summaries SET queries_this_episode=queries_this_episode+1,
@@ -177,20 +197,27 @@ class MaintenanceService:
                 fidelity = None
                 llm_metadata = None
                 if hasattr(self.builder, "build_repair"):
-                    build_out = self.builder.build_repair(
-                        RepairBuildRequest(
-                            summary_id=summary_id,
-                            old_text=summary.text,
-                            text_template=summary.text_template,
-                            old_facts=old_records,
-                            current_facts=current_records,
-                            changed_slots=tuple(changed_slots),
+                    try:
+                        build_out = self.builder.build_repair(
+                            RepairBuildRequest(
+                                summary_id=summary_id,
+                                old_text=summary.text,
+                                text_template=summary.text_template,
+                                old_facts=old_records,
+                                current_facts=current_records,
+                                changed_slots=tuple(changed_slots),
+                            )
                         )
-                    )
-                    text = build_out.text
-                    claims = build_out.claims
-                    fidelity = build_out.fidelity
-                    llm_metadata = build_out.llm_metadata
+                    except LLMError as exc:
+                        if not self.llm_fallback:
+                            raise
+                        text = DeterministicTemplateSummaryBuilder().build(summary.text_template, values)
+                        llm_metadata = _fallback_metadata("repair", exc)
+                    else:
+                        text = build_out.text
+                        claims = build_out.claims
+                        fidelity = build_out.fidelity
+                        llm_metadata = build_out.llm_metadata
                 else:
                     text = self.builder.build(summary.text_template, values)
                 timing["generation"] = _ms(generation_started)

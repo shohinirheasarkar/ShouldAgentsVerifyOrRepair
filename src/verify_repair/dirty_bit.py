@@ -140,20 +140,32 @@ def _correct(answer: str, abstained: bool, expected: str | None) -> bool:
     return (not abstained) and bool(exact_match(answer, expected))
 
 
-def judge_sample(accesses: list[StaleAccess], reader, sample_size: int, seed: int) -> list[DirtyBitJudgment]:
-    """Ask the frozen reader each sampled question from stale and fresh evidence."""
+def judge_sample(accesses: list[StaleAccess], reader, sample_size: int, seed: int,
+                 failures: list | None = None) -> list[DirtyBitJudgment]:
+    """Ask the frozen reader each sampled question from stale and fresh evidence.
+
+    A sampled access whose reader call fails (after retries) is skipped and,
+    when ``failures`` is given, recorded there as ``(query_id, error)``.
+    """
     from verify_repair.llm.reader import EvidencePacket
+    from verify_repair.models import LLMError
 
     rng = random.Random(seed)
     sample = rng.sample(accesses, min(sample_size, len(accesses)))
     judgments = []
     for access in sorted(sample, key=lambda a: (a.event_timestamp, a.query_id)):
         answers = {}
-        for mode, text, refs in (("stale_summary", access.stale_text, access.stale_refs),
-                                 ("fresh_summary", access.fresh_text, access.fresh_refs)):
-            answers[mode] = reader.answer(EvidencePacket(
-                query_id=access.query_id, question_text=access.question, summary_ids=(access.summary_id,),
-                evidence_mode=mode, evidence_text=text, source_ref_labels=refs))
+        try:
+            for mode, text, refs in (("stale_summary", access.stale_text, access.stale_refs),
+                                     ("fresh_summary", access.fresh_text, access.fresh_refs)):
+                answers[mode] = reader.answer(EvidencePacket(
+                    query_id=access.query_id, question_text=access.question, summary_ids=(access.summary_id,),
+                    evidence_mode=mode, evidence_text=text, source_ref_labels=refs))
+        except LLMError as exc:
+            if failures is None:
+                raise
+            failures.append((access.query_id, f"{type(exc).__name__}: {exc}"[:300]))
+            continue
         stale, fresh = answers["stale_summary"], answers["fresh_summary"]
         judgments.append(DirtyBitJudgment(
             access=access,

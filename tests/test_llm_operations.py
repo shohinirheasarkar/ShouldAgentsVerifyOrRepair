@@ -308,3 +308,75 @@ def test_llm_verify_failure_under_p2_rolls_back_access_history():
         assert store.get_summary("alice_profile").queries_this_episode == 0
     finally:
         db.close()
+
+
+def _fallback_run(policy, *, fallback, with_reader=False):
+    """Alice trace where every LLM call returns invalid output (two attempts each)."""
+    from verify_repair.llm.reader import AnswerReader
+
+    db = connect()
+    ledger, store = FactLedger(db), SummaryStore(db)
+    for fact, attribute, value in (("alice_name", "name", "Alice"), ("alice_job", "job", "researcher"),
+                                   ("alice_location", "location", "Maryland")):
+        ledger.append_initial_fact(fact, "Alice", attribute, value, T0, f"init_{attribute}")
+    store.create_summary(
+        "alice_profile", "Alice is a researcher living in Maryland.", "{name} is a {job} living in {location}.",
+        {"name": FactVersionRef("alice_name", 1), "job": FactVersionRef("alice_job", 1),
+         "location": FactVersionRef("alice_location", 1)}, T0)
+    events = [
+        CorrectionEvent("alice_move", T1, 1, "alice_location", ChangeType.CORRECTION, "Boston"),
+        QueryEvent("q1", T1 + timedelta(minutes=1), 2, "q1", "Alice researcher", 1, ("alice_location",)),
+    ]
+    cfg = LLMConfig(backend="fake", model_id="fake", max_retries=1)
+    client = FakeLLMClient(handler=lambda request: "not json", config=cfg)
+    sim = Simulator(
+        ledger, store, KeywordRetriever(db), policy, RunConfig(), measure_latency=True,
+        summary_builder=LLMSummaryBuilder(client), verifier=LLMVerifier(client),
+        answer_reader=AnswerReader(client) if with_reader else None, llm_config=cfg, llm_fallback=fallback)
+    return db, store, sim, events
+
+
+@pytest.mark.parametrize("policy", [VerifyOnly(), RepairOnFirstAccess()])
+def test_failed_llm_operations_still_raise_without_fallback(policy):
+    db, store, sim, events = _fallback_run(policy, fallback=False)
+    try:
+        with pytest.raises((LLMVerificationError, LLMValidationError)):
+            sim.run(events)
+        assert store.get_summary("alice_profile").text == "Alice is a researcher living in Maryland."
+    finally:
+        db.close()
+
+
+def test_verify_fallback_answers_from_current_facts_without_touching_the_summary():
+    db, store, sim, events = _fallback_run(VerifyOnly(), fallback=True, with_reader=True)
+    try:
+        result = sim.run(events)
+        row = next(r for r in result.logs if r["action"] == "VERIFY")
+        meta = row["maintenance_llm_metadata"]
+        assert meta["fallback"] == "deterministic" and meta["attempts"] == 2
+        assert meta["usage"]["prompt_tokens"] > 0  # the failed attempts are still charged
+        assert row["current_evidence"]["location"] == "Boston"
+        assert row["timing_ms"]["verify_generation"] >= 0
+        summary = store.get_summary("alice_profile")
+        assert summary.is_stale and summary.text == "Alice is a researcher living in Maryland."
+        # The reader also fails, so the answer becomes a logged abstention.
+        (answer,) = result.answers
+        assert answer["abstained"] and answer["llm_metadata"]["fallback"] == "abstain"
+        assert result.logs[0]["config_snapshot"]["llm_fallback"] == "deterministic"
+    finally:
+        db.close()
+
+
+def test_repair_fallback_rebuilds_from_the_template_with_exact_provenance():
+    db, store, sim, events = _fallback_run(RepairOnFirstAccess(), fallback=True)
+    try:
+        result = sim.run(events)
+        row = next(r for r in result.logs if r["action"] == "REPAIR")
+        assert row["maintenance_llm_metadata"]["fallback"] == "deterministic"
+        summary = store.get_summary("alice_profile")
+        assert not summary.is_stale and summary.text == "Alice is a researcher living in Boston."
+        assert store.get_source_facts("alice_profile")["location"] == FactVersionRef("alice_location", 2)
+        assert db.execute("SELECT text FROM summary_fts WHERE summary_id='alice_profile'").fetchone()[0] == (
+            "Alice is a researcher living in Boston.")
+    finally:
+        db.close()

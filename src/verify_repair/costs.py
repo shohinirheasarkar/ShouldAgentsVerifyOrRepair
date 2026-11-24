@@ -149,8 +149,10 @@ def observations_from_logs(rows: list[dict], fact_counts: dict[str, int], metric
             timing = row.get("timing_ms") or {}
             value = timing.get(f"{operation}_total", timing.get("total"))
         else:
-            usage = (row.get("maintenance_llm_metadata") or {}).get("usage") or {}
-            value = usage.get(metric)
+            metadata = row.get("maintenance_llm_metadata") or {}
+            value = (metadata.get("usage") or {}).get(metric)
+            if value is None and metadata.get("fallback"):
+                continue  # a fallback with no completed LLM call has no token/GPU sample
         if value is None:
             raise ValueError(f"row {row['event_id']} has no {metric}; replay with timing in LLM mode")
         observations.append({"operation": operation, "fact_count": fact_counts.get(row["summary_id"]),

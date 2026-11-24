@@ -19,7 +19,7 @@ from verify_repair.maintenance.operations import MaintenanceService
 from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.staleness import mark_stale_from_fact_change
 from verify_repair.memory.summaries import SummaryStore
-from verify_repair.models import ChangeType, stamp
+from verify_repair.models import ChangeType, LLMError, stamp
 from verify_repair.policies.base import (
     MaintenanceAction, MaintenanceCandidate, MaintenancePolicy, StaleAccessContext,
 )
@@ -85,6 +85,7 @@ class Simulator:
         llm_config=None,
         llm_runtime_info: dict | None = None,
         cost_profile=None,
+        llm_fallback: bool = False,
     ):
         """Set ``measure_latency`` to time each query from retrieval through
         query-time maintenance (and answer generation when ``answer_reader`` is
@@ -97,6 +98,10 @@ class Simulator:
         ``cost_profile`` (a ``CostProfile``) switches to measured-cost replay:
         each VERIFY/REPAIR is charged a keyed draw from the profile instead of
         the fixed ``config`` costs, which policies keep seeing as estimates.
+
+        ``llm_fallback`` lets LLM operations that fail after their retries fall
+        back to deterministic ones (see ``MaintenanceService``) and a failed
+        reader answer become an abstention; fallbacks are logged.
         """
         self.ledger = ledger
         self.summaries = summaries
@@ -110,6 +115,7 @@ class Simulator:
         self.llm_config = llm_config
         self.llm_runtime_info = dict(llm_runtime_info) if llm_runtime_info is not None else None
         self.cost_profile = cost_profile
+        self.llm_fallback = llm_fallback
         self._fact_counts: dict[str, int] = {}
         self.prediction_config = getattr(policy, "prediction_config", None)
         self.access_history = (
@@ -155,6 +161,7 @@ class Simulator:
                 rebuild_semantic if semantic else None
             ),
             verifier=verifier,
+            llm_fallback=llm_fallback,
         )
 
     def _fact_count(self, summary_id: str) -> int:
@@ -261,6 +268,8 @@ class Simulator:
             config_snapshot["llm"] = self.llm_config.snapshot()
         if self.cost_profile is not None:
             config_snapshot["cost_profile"] = self.cost_profile.snapshot()
+        if self.llm_fallback:
+            config_snapshot["llm_fallback"] = "deterministic"
         # Unbudgeted/deterministic runs keep their logs and hashes byte-identical.
         state = None
         if self.budget is not None:
@@ -766,7 +775,24 @@ class Simulator:
                         source_ref_labels=ref_labels,
                     )
                     reader_started = time.perf_counter()
-                    answer = self.answer_reader.answer(packet)
+                    try:
+                        answer = self.answer_reader.answer(packet)
+                    except LLMError as exc:
+                        if not self.llm_fallback:
+                            raise
+                        from verify_repair.llm.prompts import PROMPT_VERSION, READER_PROMPT_ID
+                        from verify_repair.llm.reader import AnswerResult
+
+                        answer = AnswerResult(
+                            query_id=packet.query_id, question_text=packet.question_text,
+                            answer_text="INSUFFICIENT_EVIDENCE", abstained=True, cited_sources=(),
+                            evidence_refs=packet.source_ref_labels, evidence_mode=packet.evidence_mode,
+                            prompt_id=READER_PROMPT_ID, prompt_version=PROMPT_VERSION,
+                            llm_metadata={"role": "reader", "fallback": "abstain",
+                                          "error": f"{type(exc).__name__}: {exc}"[:500],
+                                          "attempts": getattr(exc, "attempts", None),
+                                          "usage": getattr(exc, "usage", None)},
+                        )
                     reader_ms = (time.perf_counter() - reader_started) * 1000.0
                     answer_record = {
                         "query_id": answer.query_id,
