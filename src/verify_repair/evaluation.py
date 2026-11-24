@@ -188,6 +188,22 @@ def stale_allowed_episode_cost(future_queries: int, verify_cost: float, repair_c
     return min(future_queries * min(verify_cost, stale_penalty), repair_cost)
 
 
+def measured_episode_oracle(verify_costs: list[float], repair_cost: float, *,
+                            allow_stale_use: bool = False, stale_penalty: float = 0.0,
+                            cause: str = "") -> float:
+    """Hindsight cost of one episode under measured-cost replay.
+
+    ``verify_costs`` are the keyed draws for each of the episode's queries and
+    ``repair_cost`` is the episode's keyed repair draw, the same values the
+    engine charges any policy. Repairing at the first query covers them all.
+    """
+    if allow_stale_use:
+        if cause == EXPIRY:
+            return 0.0
+        return min(sum(min(cost, stale_penalty) for cost in verify_costs), repair_cost)
+    return min(sum(verify_costs), repair_cost)
+
+
 @dataclass(frozen=True)
 class EpisodeScore:
     """Per-episode accounting for one replay (evaluator-only)."""
@@ -221,6 +237,8 @@ def score_evolving_run(
     stale_penalty: float,
     *,
     allow_stale_use: bool = False,
+    cost_profile=None,
+    seed: int | None = None,
 ) -> tuple[list[GroupScore], list[EpisodeScore]]:
     """Score one replay of a synthetic-v2 trace, episode by episode.
 
@@ -236,9 +254,16 @@ def score_evolving_run(
     hold here because synthetic-v2 summaries are independent (no summary-to-
     summary dependencies) and each query retrieves exactly one summary.
     Every count is reconciled against the run totals; mismatches raise.
+
+    With ``cost_profile`` (measured-cost replay, ``seed`` = the run seed) the
+    oracle uses the same keyed draws the engine charged
+    (``measured_episode_oracle``) instead of the fixed ``verify_cost`` and
+    ``repair_cost``.
     """
     if stale_penalty < 0:
         raise ValueError("stale penalty must be nonnegative")
+    if cost_profile is not None and seed is None:
+        raise ValueError("measured-cost scoring needs the run seed")
     events = {event.event_id: event for event in workload.events}
 
     def key_of(event_id: str) -> tuple[str, int]:
@@ -251,6 +276,7 @@ def score_evolving_run(
         return stamp(event.timestamp), event.sequence_number
 
     profiles = {profile.summary_id: profile for profile in workload.memories}
+    fact_counts = {spec["summary_id"]: len(spec["slots"]) for spec in workload.summaries}
     episodes = {episode.episode_id: episode for episode in workload.episodes}
     order = defaultdict(list)  # summary -> [(start key, episode_id)]
     for episode in workload.episodes:
@@ -276,6 +302,7 @@ def score_evolving_run(
     stale = Counter()
     first_repair = {}
     query_rows = defaultdict(list)
+    episode_query_events = defaultdict(list)
     for row in result.logs:
         summary_id = row["summary_id"]
         if summary_id is None:
@@ -294,6 +321,7 @@ def score_evolving_run(
                 fresh[summary_id] += 1
             else:
                 queries[current] += 1
+                episode_query_events[current].append(row["event_id"])
         if row["action"] != "NO_OP" or row["used_stale_source"]:
             if row["stale_episode_id"] != current or current is None:
                 raise ValueError(f"engine episode {row['stale_episode_id']} disagrees with trace episode {current}")
@@ -341,7 +369,16 @@ def score_evolving_run(
             elif episode.end_time is None:
                 intervals.append((stale_since, end_of_trace))
             k = episode.accesses
-            if allow_stale_use:
+            if cost_profile is not None:
+                from verify_repair.costs import repair_key, verify_key
+                facts = fact_counts[summary_id]
+                oracle = measured_episode_oracle(
+                    [cost_profile.draw("verify", verify_key(event_id, summary_id), seed, facts)
+                     for event_id in episode_query_events[episode_id]],
+                    cost_profile.draw("repair", repair_key(summary_id, episode_id), seed, facts),
+                    allow_stale_use=allow_stale_use, stale_penalty=stale_penalty, cause=episode.cause,
+                )
+            elif allow_stale_use:
                 oracle = stale_allowed_episode_cost(k, verify_cost, repair_cost, stale_penalty, episode.cause)
             else:
                 oracle = oracle_episode_cost(k, verify_cost, repair_cost)

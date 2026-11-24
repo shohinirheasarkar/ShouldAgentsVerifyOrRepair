@@ -84,12 +84,19 @@ class Simulator:
         answer_reader=None,
         llm_config=None,
         llm_runtime_info: dict | None = None,
+        cost_profile=None,
     ):
         """Set ``measure_latency`` to time each query from retrieval through
         query-time maintenance (and answer generation when ``answer_reader`` is
         configured). It excludes correction-time and scheduled repairs
         (background work). Timing is the only non-deterministic log field, so
-        it stays off unless requested.
+        it stays off unless requested. With timing on, each row also carries
+        ``timing_ms`` (retrieval, operation components, reader) and
+        ``query_visible`` (False for correction-time, tick, and queue repairs).
+
+        ``cost_profile`` (a ``CostProfile``) switches to measured-cost replay:
+        each VERIFY/REPAIR is charged a keyed draw from the profile instead of
+        the fixed ``config`` costs, which policies keep seeing as estimates.
         """
         self.ledger = ledger
         self.summaries = summaries
@@ -102,6 +109,8 @@ class Simulator:
         self.answer_reader = answer_reader
         self.llm_config = llm_config
         self.llm_runtime_info = dict(llm_runtime_info) if llm_runtime_info is not None else None
+        self.cost_profile = cost_profile
+        self._fact_counts: dict[str, int] = {}
         self.prediction_config = getattr(policy, "prediction_config", None)
         self.access_history = (
             AccessHistoryStore(summaries.db, self.prediction_config.half_life_seconds)
@@ -147,6 +156,25 @@ class Simulator:
             ),
             verifier=verifier,
         )
+
+    def _fact_count(self, summary_id: str) -> int:
+        if summary_id not in self._fact_counts:
+            self._fact_counts[summary_id] = len(self.summaries.get_slots(summary_id))
+        return self._fact_counts[summary_id]
+
+    def _verify_cost(self, event_id: str, summary_id: str) -> float:
+        if self.cost_profile is None:
+            return self.config.verify_cost_units
+        from verify_repair.costs import verify_key
+        return self.cost_profile.draw("verify", verify_key(event_id, summary_id),
+                                      self.config.seed, self._fact_count(summary_id))
+
+    def _repair_cost(self, summary_id: str, episode_id: str | None) -> float:
+        if self.cost_profile is None:
+            return self.config.repair_cost_units
+        from verify_repair.costs import repair_key
+        return self.cost_profile.draw("repair", repair_key(summary_id, episode_id),
+                                      self.config.seed, self._fact_count(summary_id))
 
     @contextmanager
     def _track_access(self, summary_id: str, at_time: datetime) -> Iterator[DemandPrediction | None]:
@@ -231,6 +259,8 @@ class Simulator:
             config_snapshot["budget"] = self.budget.snapshot()
         if self.llm_config is not None:
             config_snapshot["llm"] = self.llm_config.snapshot()
+        if self.cost_profile is not None:
+            config_snapshot["cost_profile"] = self.cost_profile.snapshot()
         # Unbudgeted/deterministic runs keep their logs and hashes byte-identical.
         state = None
         if self.budget is not None:
@@ -276,6 +306,8 @@ class Simulator:
             budget_outcome=None,
             llm_usage=None,
             llm_metadata=None,
+            timing=None,
+            query_visible=None,
         ):
             if isinstance(event, QueryEvent):
                 event_type = "query"
@@ -331,18 +363,21 @@ class Simulator:
                 result.logs[-1]["llm_usage"] = llm_usage
             if llm_metadata is not None:
                 result.logs[-1]["maintenance_llm_metadata"] = llm_metadata
+            if self.measure_latency and (timing is not None or query_visible is not None):
+                result.logs[-1]["timing_ms"] = dict(timing or {})
+                result.logs[-1]["query_visible"] = query_visible
 
-        def execute_repair(summary_id, at_time):
-            """Repair now, reserving c_r from the budget; None if the budget is exhausted."""
+        def execute_repair(summary_id, at_time, cost):
+            """Repair now, reserving ``cost`` from the budget; None if the budget is exhausted."""
             if state is None:
                 return self.maintenance.repair(summary_id, at_time)
-            if not state.can_afford():
+            if not state.can_afford(cost):
                 return None
-            state.reserve()
+            state.reserve(cost)
             try:
                 repaired = self.maintenance.repair(summary_id, at_time)
             except BaseException:
-                state.refund()
+                state.refund(cost)
                 raise
             state.queue.pop(summary_id, None)
             return repaired
@@ -358,24 +393,27 @@ class Simulator:
                     del state.queue[entry.summary_id]  # repaired or superseded elsewhere
                     state.invalidated += 1
                     continue
-                if not state.can_afford():
+                cost = self._repair_cost(entry.summary_id, summary.stale_episode_id)
+                if not state.can_afford(cost):
                     break
-                repaired = execute_repair(entry.summary_id, event.timestamp)
+                repaired = execute_repair(entry.summary_id, event.timestamp, cost)
                 state.executed_from_queue += 1
                 state.waits_seconds.append((event.timestamp - entry.enqueued_at).total_seconds())
                 result.repairs += 1
-                result.cumulative_repair_cost += self.config.repair_cost_units
+                result.cumulative_repair_cost += cost
                 log(
                     event,
                     summary_id=entry.summary_id,
                     stale_before=True,
                     episode=summary.stale_episode_id,
                     action=MaintenanceAction.REPAIR,
-                    repair_cost=self.config.repair_cost_units,
+                    repair_cost=cost,
                     maintenance_trigger="deferred_queue",
                     budget_outcome="charged",
                     llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
                     llm_metadata=repaired.llm_metadata,
+                    timing=repaired.timing_ms,
+                    query_visible=False,
                 )
 
         processed_event_count = 0
@@ -483,7 +521,8 @@ class Simulator:
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    repaired = execute_repair(summary_id, event.timestamp)
+                    cost = self._repair_cost(summary_id, stale.stale_episode_id)
+                    repaired = execute_repair(summary_id, event.timestamp, cost)
                     if repaired is None:
                         state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
                                       event.timestamp, "correction")
@@ -497,9 +536,7 @@ class Simulator:
                         continue
 
                     result.repairs += 1
-                    result.cumulative_repair_cost += (
-                        self.config.repair_cost_units
-                    )
+                    result.cumulative_repair_cost += cost
 
                     log(
                         event,
@@ -507,10 +544,12 @@ class Simulator:
                         stale_before=stale.is_stale,
                         episode=stale.stale_episode_id,
                         action=action,
-                        repair_cost=self.config.repair_cost_units,
+                        repair_cost=cost,
                         budget_outcome=charged(),
                         llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
                         llm_metadata=repaired.llm_metadata,
+                        timing=repaired.timing_ms,
+                        query_visible=False,
                     )
 
             else:
@@ -522,6 +561,7 @@ class Simulator:
                     event.query_text,
                     event.top_k,
                 )
+                retrieval_ms = (time.perf_counter() - started) * 1000.0
 
                 question_text = None
                 if self.verifier is not None or self.answer_reader is not None:
@@ -572,7 +612,8 @@ class Simulator:
                             )
 
                             if action == MaintenanceAction.REPAIR:
-                                repaired = execute_repair(hit.summary_id, event.timestamp)
+                                planned_repair_cost = self._repair_cost(hit.summary_id, summary.stale_episode_id)
+                                repaired = execute_repair(hit.summary_id, event.timestamp, planned_repair_cost)
                                 if repaired is None:
                                     # Out of budget: answer from current facts, repair later.
                                     state.enqueue(hit.summary_id, summary.stale_episode_id,
@@ -600,9 +641,7 @@ class Simulator:
                                 )
                                 evidence = verified.current_evidence
                                 maint_meta = verified.llm_metadata
-                                verify_cost = (
-                                    self.config.verify_cost_units
-                                )
+                                verify_cost = self._verify_cost(event.event_id, hit.summary_id)
 
                                 result.verifications += 1
                                 result.cumulative_verify_cost += (
@@ -612,9 +651,7 @@ class Simulator:
                             elif action == MaintenanceAction.REPAIR:
                                 evidence_refs = repaired.source_refs
                                 maint_meta = repaired.llm_metadata
-                                repair_cost = (
-                                    self.config.repair_cost_units
-                                )
+                                repair_cost = planned_repair_cost
 
                                 result.repairs += 1
                                 result.cumulative_repair_cost += (
@@ -647,6 +684,13 @@ class Simulator:
 
                     result.stale_source_uses += int(used_stale)
 
+                    # Operation components are prefixed "verify_" / "repair_".
+                    operation = verified if verified is not None else repaired
+                    query_timing = {"retrieval": retrieval_ms}
+                    if operation is not None and operation.timing_ms:
+                        prefix = "verify" if operation is verified else "repair"
+                        query_timing.update({f"{prefix}_{k}": v for k, v in operation.timing_ms.items()})
+
                     log(
                         event,
                         summary_id=hit.summary_id,
@@ -661,6 +705,8 @@ class Simulator:
                         budget_outcome=outcome,
                         llm_usage=maint_meta.get("usage") if maint_meta else None,
                         llm_metadata=maint_meta,
+                        timing=query_timing,
+                        query_visible=True,
                     )
                     if state is not None:
                         state.observe(hit.summary_id, event.timestamp)
@@ -719,7 +765,9 @@ class Simulator:
                         evidence_text=packet_text,
                         source_ref_labels=ref_labels,
                     )
+                    reader_started = time.perf_counter()
                     answer = self.answer_reader.answer(packet)
+                    reader_ms = (time.perf_counter() - reader_started) * 1000.0
                     answer_record = {
                         "query_id": answer.query_id,
                         "event_id": event.event_id,
@@ -750,6 +798,8 @@ class Simulator:
                         last_row.get("llm_usage"),
                         answer.llm_metadata.get("usage"),
                     )
+                    if self.measure_latency and "timing_ms" in last_row:
+                        last_row["timing_ms"]["reader"] = reader_ms
 
                 if self.measure_latency:
                     elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -796,7 +846,8 @@ class Simulator:
                 for summary_id, action in actions:
                     stale = self.summaries.get_summary(summary_id)
 
-                    repaired = execute_repair(summary_id, event.timestamp)
+                    cost = self._repair_cost(summary_id, stale.stale_episode_id)
+                    repaired = execute_repair(summary_id, event.timestamp, cost)
                     if repaired is None:
                         state.enqueue(summary_id, stale.stale_episode_id, stale.stale_since,
                                       event.timestamp, "tick")
@@ -812,9 +863,7 @@ class Simulator:
                         continue
 
                     result.repairs += 1
-                    result.cumulative_repair_cost += (
-                        self.config.repair_cost_units
-                    )
+                    result.cumulative_repair_cost += cost
 
                     log(
                         event,
@@ -822,12 +871,14 @@ class Simulator:
                         stale_before=stale.is_stale,
                         episode=stale.stale_episode_id,
                         action=action,
-                        repair_cost=self.config.repair_cost_units,
+                        repair_cost=cost,
                         maintenance_trigger="scheduled_tick",
                         maintenance_tick=processed_event_count,
                         budget_outcome=charged(),
                         llm_usage=repaired.llm_metadata.get("usage") if repaired.llm_metadata else None,
                         llm_metadata=repaired.llm_metadata,
+                        timing=repaired.timing_ms,
+                        query_visible=False,
                     )
 
         if state is not None:

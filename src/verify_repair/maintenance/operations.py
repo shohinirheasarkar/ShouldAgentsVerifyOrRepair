@@ -1,6 +1,14 @@
-"""Execute VERIFY without cache mutation or REPAIR as an atomic cache transition."""
+"""Execute VERIFY without cache mutation or REPAIR as an atomic cache transition.
+
+Both operations also report wall-clock component timings in milliseconds
+(``timing_ms``): source lookup, generation (template or LLM, including
+validation retries), summary store and keyword-index update, semantic-index
+update, and the operation total. Timings never affect results; the simulator
+logs them only when latency measurement is requested.
+"""
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable
@@ -37,6 +45,7 @@ class VerificationResult:
     verified_context: str | None = None
     cited_sources: tuple[str, ...] | None = None
     llm_metadata: dict[str, Any] | None = None
+    timing_ms: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,11 @@ class RepairResult:
     claims: tuple[RepairClaim, ...] | None = None
     fidelity: dict[str, float] | None = None
     llm_metadata: dict[str, Any] | None = None
+    timing_ms: dict[str, float] | None = None
+
+
+def _ms(start: float) -> float:
+    return (time.perf_counter() - start) * 1000.0
 
 
 class MaintenanceService:
@@ -73,6 +87,8 @@ class MaintenanceService:
         *,
         query_text: str | None = None,
     ) -> VerificationResult:
+        started = time.perf_counter()
+        timing: dict[str, float] = {}
         with transaction(self.summaries.db):
             summary = self.summaries.get_summary(summary_id)
             old = self.summaries.get_source_facts(summary_id)
@@ -92,7 +108,9 @@ class MaintenanceService:
                     current_records[slot] = record
                 if ref != old_ref:
                     changes.append(SourceChange(slot, old_ref, ref, evidence[slot]))
+            timing["source_lookup"] = _ms(started)
 
+            generation_started = time.perf_counter()
             verified_context = None
             cited_sources = None
             llm_metadata = None
@@ -108,10 +126,12 @@ class MaintenanceService:
                 verified_context = llm_out.verified_evidence
                 cited_sources = llm_out.cited_sources
                 llm_metadata = llm_out.llm_metadata
+            timing["generation"] = _ms(generation_started)
 
             self.summaries.db.execute("""UPDATE summaries SET queries_this_episode=queries_this_episode+1,
               verification_cost_this_episode=verification_cost_this_episode+? WHERE summary_id=?""",
               (self.verify_cost_units, summary_id))
+        timing["total"] = _ms(started)
         return VerificationResult(
             summary_id,
             summary.stale_episode_id,
@@ -123,9 +143,12 @@ class MaintenanceService:
             verified_context=verified_context,
             cited_sources=cited_sources,
             llm_metadata=llm_metadata,
+            timing_ms=timing,
         )
 
     def repair(self, summary_id: str, at_time: datetime) -> RepairResult:
+        started = time.perf_counter()
+        timing: dict[str, float] = {}
         try:
             with transaction(self.summaries.db):
                 summary = self.summaries.get_summary(summary_id)
@@ -147,7 +170,9 @@ class MaintenanceService:
                     current_records[slot] = current
                     if old_refs.get(slot) != current.ref:
                         changed_slots.append(slot)
+                timing["source_lookup"] = _ms(started)
 
+                generation_started = time.perf_counter()
                 claims = None
                 fidelity = None
                 llm_metadata = None
@@ -168,10 +193,16 @@ class MaintenanceService:
                     llm_metadata = build_out.llm_metadata
                 else:
                     text = self.builder.build(summary.text_template, values)
+                timing["generation"] = _ms(generation_started)
 
+                store_started = time.perf_counter()
                 self.summaries.replace_summary_contents_and_sources(summary_id, text, sources, at_time)
+                timing["store_and_keyword_index"] = _ms(store_started)
+                semantic_started = time.perf_counter()
                 if self.semantic_index_update:
                     self.semantic_index_update(summary_id, text)
+                timing["semantic_index"] = _ms(semantic_started)
+            timing["total"] = _ms(started)
             return RepairResult(
                 summary_id,
                 text,
@@ -180,6 +211,7 @@ class MaintenanceService:
                 claims=claims,
                 fidelity=fidelity,
                 llm_metadata=llm_metadata,
+                timing_ms=timing,
             )
         except BaseException:
             if self.semantic_index_update and self.semantic_index_rebuild:

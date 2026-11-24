@@ -103,20 +103,24 @@ class BudgetState:
         self.window, self.remaining = window, float(self.config.units)
         return True
 
-    def can_afford(self) -> bool:
-        return self.remaining + EPSILON >= self.repair_cost
+    # ``cost`` is the realized repair cost under measured-cost replay; by
+    # default every repair costs the fixed ``repair_cost``.
+    def can_afford(self, cost: float | None = None) -> bool:
+        return self.remaining + EPSILON >= (self.repair_cost if cost is None else cost)
 
-    def reserve(self) -> None:
-        if not self.can_afford():
+    def reserve(self, cost: float | None = None) -> None:
+        cost = self.repair_cost if cost is None else cost
+        if not self.can_afford(cost):
             raise ValueError("repair reservation exceeds the remaining budget")
-        self.remaining -= self.repair_cost
-        self.spent += self.repair_cost
-        self.spent_by_window[self.window] = self.spent_by_window.get(self.window, 0.0) + self.repair_cost
+        self.remaining -= cost
+        self.spent += cost
+        self.spent_by_window[self.window] = self.spent_by_window.get(self.window, 0.0) + cost
 
-    def refund(self) -> None:
-        self.remaining += self.repair_cost
-        self.spent -= self.repair_cost
-        self.spent_by_window[self.window] -= self.repair_cost
+    def refund(self, cost: float | None = None) -> None:
+        cost = self.repair_cost if cost is None else cost
+        self.remaining += cost
+        self.spent -= cost
+        self.spent_by_window[self.window] -= cost
 
     def enqueue(self, summary_id: str, episode_id: str, stale_since: datetime,
                 at_time: datetime, trigger: str) -> None:
