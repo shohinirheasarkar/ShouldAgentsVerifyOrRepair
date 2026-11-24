@@ -6,6 +6,9 @@ schedule in the midterm report (Table 2), as of **November 23, 2026**
 (start of Week 13). The final paper and presentation are due in Week 15
 (about December 7–11).
 
+The step-by-step handoff plan to the final submission is in
+[docs/final-plan/README.md](final-plan/README.md).
+
 Status key: **Done** · **Partial** · **Not started**
 
 ## Summary
@@ -17,9 +20,9 @@ Status key: **Done** · **Partial** · **Not started**
 | 6–7 | Correction stream, staleness marking, remaining baselines | Done |
 | 8–9 | 10K generator, P1, P2, oracle and regret, midterm report | Done |
 | 10 | Repair budget, budget-aware oracle, evolving workloads, stale-use Periodic Refresh | Done (post-midterm Steps 1–4) |
-| 11 | LLM VERIFY/REPAIR, measured costs, cost replay, semantic dirty-bit check | Partial: LLM mode built (Step 5); Zaratan run, measured costs, and dirty-bit check remaining |
+| 11 | LLM VERIFY/REPAIR, measured costs, cost replay, semantic dirty-bit check | Done, pending team review (post-midterm Steps 5–6); LLM VERIFY prompt/validator mismatch open |
 | 12 | P3 on held-out and shifted traces; artifact audit | Partial: prompt-injection test done; P3, CI, `pip-audit` remaining |
-| 13–14 | LongMemEval subset, 100K cost replay, multi-seed evaluation, paper draft | In progress: 10K synthetic-v2 evaluation running |
+| 13–14 | LongMemEval subset, 100K cost replay, multi-seed evaluation, paper draft | Not started |
 | 15 | Final paper and presentation | Not started |
 
 ## Completed work
@@ -61,14 +64,26 @@ the oracle on every trace; P2 beats P1 at c_r ∈ {2, 5} but is worse at
 c_r = 10 on three of four traces; ordering deferred repairs by predicted
 savings lowers cost by up to 21%.
 
-### Week 11: Post-midterm Step 5 — Partial
+### Week 11: Post-midterm Steps 5–6 — Done, pending team review
 
-- Opt-in local LLM mode (`--mode llm`, Qwen 2.5 7B Instruct, 4-bit NF4) for
-  VERIFY, REPAIR, and a fixed answer reader shared by all policies; validators
-  for citations and provenance; event-time answer scoring (exact match, F1,
-  abstention, outdated-fact errors). See [docs/step5/](step5/README.md).
-- **Remaining:** the live Zaratan GPU run (`scripts/zaratan_step5.sbatch`) and
-  its saved outputs.
+- **Step 5.** Opt-in local LLM mode (`--mode llm`, Qwen 2.5 7B Instruct,
+  4-bit NF4) for VERIFY, REPAIR, and a fixed answer reader shared by all
+  policies; validators for citations and provenance; event-time answer
+  scoring. Live Zaratan H100 run (job 24252063): live test and canonical
+  Maryland → Boston check passed. See [docs/step5/](step5/README.md).
+- **Step 6.** Component timing; 1K GPU pilot (job 24252220); `cost-profile-v1`
+  files; measured-cost replay (`--cost-profile`) with a knapsack budget
+  oracle; semantic-index profile; evaluator-only dirty-bit check. See
+  [docs/step6/](step6/README.md).
+- Pilot numbers (seed 2001, development only): REPAIR p50 3.6 s, VERIFY p50
+  2.5 s. Repair/verify cost ratio 1.9 by wall time.
+- About half of stale flags are false alarms: structural precision 0.52
+  (8,734 accesses); semantic precision 0.55 (300 sampled).
+- **Open issues:**
+  - 51% of LLM VERIFY calls fail validation and fall back (the v4 prompt asks
+    for query-scoped evidence; the validator requires every changed slot),
+    which inflates the measured VERIFY cost;
+  - the toy reader answers a different attribute after a retrieval miss.
 
 ## Differences from the proposal
 
@@ -87,14 +102,11 @@ savings lowers cost by up to 21%.
 
 ### Week 13 (now)
 
-- [ ] **Multi-seed 10K synthetic-v2 evaluation** (Amelia): four regimes ×
-      evaluation seeds 101–105 × all 8 policies, unbudgeted at ρ ∈ {2, 5, 10}
-      and budgeted at c_r = 5 with B ∈ {500, 2000}. Runner:
-      `scripts/run_v2_eval.sh`.
-- [ ] **Step 5 Zaratan run** (Arik): live LLM outputs into `docs/step5/`.
-- [ ] **Step 6: measured costs.** Profile c_v and c_r (GPU time, tokens)
-      from the LLM runs; replay the measured cost distributions at 10K and
-      100K. Variable costs make the budget oracle a knapsack per window.
+- [x] **Step 5 Zaratan run:** live LLM outputs in `docs/step5/`.
+- [x] **Step 6: measured costs:** cost profiles, replay, dirty bits
+      (`docs/step6/`); team review pending.
+- [ ] **Decide the LLM VERIFY fix** (v5 prompt or query-slot validator),
+      then rerun the 1K pilot to refresh the cost profiles.
 
 ### Week 14
 
@@ -121,7 +133,7 @@ savings lowers cost by up to 21%.
 | 2 (Week 15) | All baselines and the hindsight oracle with regret | Done |
 | 2 | Semantic dirty-bit check | Not started |
 | 2 | P3 with input analysis | Not started (Step 7) |
-| 2 | Repair-budget experiments; stable vs. shifting workloads at 10K | Partial: 100-memory results done; 10K multi-seed running |
+| 2 | Repair-budget experiments; stable vs. shifting workloads at 10K | Partial: 100-memory development results; 10K runs belong to final-plan Step 9 |
 | 2 | LongMemEval and RealTime QA answer quality | Not started (RealTime QA moved to stretch) |
 | 2 | 100K scaling; reproducible repository and final paper | Not started (needs Step 6 cost replay) |
 | 3 (stretch) | 1M cost-replay, hedged P3 under adversarial shift, public trace release | Not started |

@@ -1,0 +1,25 @@
+{
+  "fresh_answer_accuracy": 0.9866666666666667,
+  "fresh_answer_accuracy_ci95": [
+    0.9662244695197068,
+    0.9948030382967227
+  ],
+  "needs_review": 164,
+  "reader_failure_examples": [],
+  "reader_failures": 0,
+  "sample_size": 300,
+  "sample_structurally_needed": 174,
+  "semantic_flag_precision": 0.5466666666666666,
+  "semantic_flag_precision_ci95": [
+    0.49009847469408696,
+    0.6020548479732418
+  ],
+  "stale_accesses": 8734,
+  "stale_wrong_given_not_structurally_needed": 0.0,
+  "stale_wrong_given_structurally_needed": 0.9425287356321839,
+  "structural_flag_precision": 0.521868559651935,
+  "structural_flag_precision_ci95": [
+    0.5113852386040196,
+    0.5323326523416589
+  ]
+}

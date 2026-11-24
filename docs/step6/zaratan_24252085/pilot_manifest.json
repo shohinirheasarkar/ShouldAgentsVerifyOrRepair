@@ -1,0 +1,668 @@
+{
+  "cost_profiles": {
+    "gpu_ms": {
+      "failed": "cost profile needs pooled samples for verify"
+    },
+    "total_tokens": {
+      "failed": "cost profile needs pooled samples for verify"
+    },
+    "wall_ms": {
+      "failed": "cost profile needs pooled samples for verify"
+    }
+  },
+  "dirty_bit": {
+    "fresh_answer_accuracy": 0.9866666666666667,
+    "fresh_answer_accuracy_ci95": [
+      0.9662244695197068,
+      0.9948030382967227
+    ],
+    "needs_review": 164,
+    "sample_size": 300,
+    "sample_structurally_needed": 174,
+    "semantic_flag_precision": 0.5466666666666666,
+    "semantic_flag_precision_ci95": [
+      0.49009847469408696,
+      0.6020548479732418
+    ],
+    "stale_accesses": 8734,
+    "stale_wrong_given_not_structurally_needed": 0.0,
+    "stale_wrong_given_structurally_needed": 0.9425287356321839,
+    "structural_flag_precision": 0.521868559651935,
+    "structural_flag_precision_ci95": [
+      0.5113852386040196,
+      0.5323326523416589
+    ]
+  },
+  "llm_config": {
+    "backend": "hf-4bit",
+    "compute_dtype": "auto",
+    "do_sample": false,
+    "max_retries": 2,
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "prompt_bundle_sha256": "28cc06b7ab1cca1ba66387f8518b1e293c227a0fe6a66098c93e2318c59e8390",
+    "prompt_version": "llm-prompts-v4",
+    "quantization": "nf4",
+    "reader_max_new_tokens": 128,
+    "repair_max_new_tokens": 512,
+    "seed": 12345,
+    "temperature": null,
+    "timeout_seconds": 60.0,
+    "top_p": null,
+    "verify_max_new_tokens": 256
+  },
+  "mode": "llm",
+  "pilot": {
+    "repair-on-first-access": {
+      "failed": "LLMValidationError('LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot \\'attr01\\' as retracted/unavailable (last_output=\\'{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}\\')')",
+      "seconds": 145.25720316404477,
+      "traceback": "Traceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 194, in build_repair\n    validated = validate_repair_output(response.text, request)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/validation.py\", line 318, in validate_repair_output\n    raise LLMValidationError(\nverify_repair.models.LLMValidationError: summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/scripts/run_step6_pilot.py\", line 152, in run_policy\n    measure_latency=True, **llm).run(events)\n                                 ^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 616, in run\n    repaired = execute_repair(hit.summary_id, event.timestamp, planned_repair_cost)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 373, in execute_repair\n    return self.maintenance.repair(summary_id, at_time)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/maintenance/operations.py\", line 180, in repair\n    build_out = self.builder.build_repair(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 222, in build_repair\n    raise LLMValidationError(\nverify_repair.models.LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}')\n"
+    },
+    "verify-only": {
+      "failed": "LLMVerificationError('LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value \\'cedar\\' for changed slot \\'attr03\\' (last_output=\\'{\"verified_evidence\": \"The current attr05 of Entity000922 is amber.\", \"cited_sources\": [\"memory_000922_attr05@v1\"], \"retracted_slots\": []}\\')')",
+      "seconds": 3.128164827823639,
+      "traceback": "Traceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 117, in verify\n    validated = validate_verify_output(\n                ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/validation.py\", line 182, in validate_verify_output\n    raise LLMVerificationError(\nverify_repair.models.LLMVerificationError: verified_evidence missing current value 'cedar' for changed slot 'attr03'\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/scripts/run_step6_pilot.py\", line 152, in run_policy\n    measure_latency=True, **llm).run(events)\n                                 ^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 628, in run\n    verified = self.maintenance.verify(\n               ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/maintenance/operations.py\", line 118, in verify\n    llm_out = self.verifier.verify(\n              ^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 144, in verify\n    raise LLMVerificationError(\nverify_repair.models.LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value 'cedar' for changed slot 'attr03' (last_output='{\"verified_evidence\": \"The current attr05 of Entity000922 is amber.\", \"cited_sources\": [\"memory_000922_attr05@v1\"], \"retracted_slots\": []}')\n"
+    }
+  },
+  "pilot_quality": {
+    "repair-on-first-access": {
+      "failed": "LLMValidationError('LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot \\'attr01\\' as retracted/unavailable (last_output=\\'{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"attr02 garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}\\')')",
+      "seconds": 485.13562989607453,
+      "traceback": "Traceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 194, in build_repair\n    validated = validate_repair_output(response.text, request)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/validation.py\", line 318, in validate_repair_output\n    raise LLMValidationError(\nverify_repair.models.LLMValidationError: summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/scripts/run_step6_pilot.py\", line 152, in run_policy\n    measure_latency=True, **llm).run(events)\n                                 ^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 616, in run\n    repaired = execute_repair(hit.summary_id, event.timestamp, planned_repair_cost)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 373, in execute_repair\n    return self.maintenance.repair(summary_id, at_time)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/maintenance/operations.py\", line 180, in repair\n    build_out = self.builder.build_repair(\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 222, in build_repair\n    raise LLMValidationError(\nverify_repair.models.LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"attr02 garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}')\n"
+    },
+    "verify-only": {
+      "failed": "LLMVerificationError('LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value \\'cedar\\' for changed slot \\'attr03\\' (last_output=\\'{\"verified_evidence\": \"The current attr05 of Entity000922 is amber.\", \"cited_sources\": [\"memory_000922_attr05@v1\"], \"retracted_slots\": []}\\')')",
+      "seconds": 66.56032689800486,
+      "traceback": "Traceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 117, in verify\n    validated = validate_verify_output(\n                ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/validation.py\", line 182, in validate_verify_output\n    raise LLMVerificationError(\nverify_repair.models.LLMVerificationError: verified_evidence missing current value 'cedar' for changed slot 'attr03'\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/scripts/run_step6_pilot.py\", line 152, in run_policy\n    measure_latency=True, **llm).run(events)\n                                 ^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/simulator/engine.py\", line 628, in run\n    verified = self.maintenance.verify(\n               ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/maintenance/operations.py\", line 118, in verify\n    llm_out = self.verifier.verify(\n              ^^^^^^^^^^^^^^^^^^^^^\n  File \"/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/src/verify_repair/llm/operations.py\", line 144, in verify\n    raise LLMVerificationError(\nverify_repair.models.LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value 'cedar' for changed slot 'attr03' (last_output='{\"verified_evidence\": \"The current attr05 of Entity000922 is amber.\", \"cited_sources\": [\"memory_000922_attr05@v1\"], \"retracted_slots\": []}')\n"
+    }
+  },
+  "pilot_workload": {
+    "config": {
+      "burst_minutes": 10.0,
+      "change_mix": [
+        0.6,
+        0.2,
+        0.1,
+        0.1
+      ],
+      "changes_per_memory": 3.0,
+      "cold_queries": [
+        0,
+        2
+      ],
+      "demand_mode": "stable",
+      "exception_hours": 1.0,
+      "facts_per_summary": [
+        1,
+        6
+      ],
+      "fan_out": 1,
+      "group_counts": [
+        334,
+        333,
+        333
+      ],
+      "horizon_hours": 24.0,
+      "hot_queries": [
+        11,
+        50
+      ],
+      "num_memories": 1000,
+      "num_phases": 2,
+      "seed": 2001,
+      "shared_fact_rate": 0.0,
+      "warm_queries": [
+        3,
+        10
+      ]
+    },
+    "dataset_id": "synthetic-v2-0733b02f37ae43c6",
+    "sha256": "adc9358cecbe8e3a1b0e89441915e8a1ed0592fbc93744c46ed7e2f247672784"
+  },
+  "runtime_info": {
+    "accelerate_version": "1.16.0",
+    "backend": "hf-4bit",
+    "bitsandbytes_version": "0.50.2",
+    "compute_dtype": "bfloat16",
+    "cuda_available": true,
+    "cuda_version": "13.2",
+    "do_sample": false,
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "gpu_vram_gb": 79.18,
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "offline": true,
+    "platform": "Linux-4.18.0-553.125.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "prompt_bundle_sha256": "28cc06b7ab1cca1ba66387f8518b1e293c227a0fe6a66098c93e2318c59e8390",
+    "prompt_version": "llm-prompts-v4",
+    "python_version": "3.11.13",
+    "quantization": "nf4",
+    "temperature": null,
+    "top_p": null,
+    "torch_version": "2.15.0+cu132",
+    "transformers_version": "5.24.1"
+  },
+  "settings": {
+    "cost_queries": 3000,
+    "dirty_sample": 300,
+    "llm_dtype": "auto",
+    "llm_max_retries": 2,
+    "llm_model": "Qwen/Qwen2.5-7B-Instruct",
+    "llm_quantization": "nf4",
+    "llm_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "llm_timeout": 60.0,
+    "mode": "llm",
+    "output_dir": "/scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/docs/step6/zaratan_24252085",
+    "pilot_memories": 1000,
+    "pilot_seed": 2001,
+    "quality_queries": 1000,
+    "skip_toy": false
+  },
+  "stage_seconds": {
+    "dirty_bit": 349.15026910742745,
+    "model_load": 611.7467576772906,
+    "pilot_cost": 151.5767141492106,
+    "pilot_quality": 552.6938372100703,
+    "toy": 43.13757642172277
+  },
+  "toy": {
+    "eager-refresh": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 2,
+        "abstention_rate": 0.4,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 555,
+        "total_prompt_tokens": 5050,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": {
+          "max": 5689.791628159583,
+          "mean": 2593.6553346303604,
+          "min": 691.4709326811135,
+          "n": 6,
+          "p50": 1638.1278950721025,
+          "p95": 5689.791628159583,
+          "p99": 5689.791628159583
+        },
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 525.9219449944794,
+            "mean": 443.04306944832206,
+            "min": 412.3491640202701,
+            "n": 5,
+            "p50": 414.4889246672392,
+            "p95": 525.9219449944794,
+            "p99": 525.9219449944794
+          },
+          "reader": {
+            "max": 525.4713939502835,
+            "mean": 442.7126017399132,
+            "min": 411.9843449443579,
+            "n": 5,
+            "p50": 414.2741607502103,
+            "p95": 525.4713939502835,
+            "p99": 525.4713939502835
+          },
+          "with_maintenance": null,
+          "without_maintenance": {
+            "max": 525.9219449944794,
+            "mean": 443.04306944832206,
+            "min": 412.3491640202701,
+            "n": 5,
+            "p50": 414.4889246672392,
+            "p95": 525.9219449944794,
+            "p99": 525.9219449944794
+          }
+        },
+        "repair": {
+          "count": 6,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 101,
+              "mean": 70.83333333333333,
+              "min": 43,
+              "n": 6,
+              "p50": 43,
+              "p95": 101,
+              "p99": 101
+            },
+            "gpu_ms": {
+              "max": 5687.42138671875,
+              "mean": 2591.4136352539062,
+              "min": 690.0817260742188,
+              "n": 6,
+              "p50": 1636.001953125,
+              "p95": 5687.42138671875,
+              "p99": 5687.42138671875
+            },
+            "prompt_tokens": {
+              "max": 1025,
+              "mean": 607.5,
+              "min": 472,
+              "n": 6,
+              "p50": 475,
+              "p95": 1025,
+              "p99": 1025
+            },
+            "total_tokens": {
+              "max": 1126,
+              "mean": 678.3333333333334,
+              "min": 515,
+              "n": 6,
+              "p50": 518,
+              "p95": 1126,
+              "p99": 1126
+            },
+            "wall_ms": {
+              "max": 5687.41015298292,
+              "mean": 2591.4344030898064,
+              "min": 690.1093306951225,
+              "n": 6,
+              "p50": 1636.0208438709378,
+              "p95": 5687.41015298292,
+              "p99": 5687.41015298292
+            }
+          },
+          "retried_operations": 1,
+          "timing_ms": {}
+        }
+      },
+      "queries": 5,
+      "repairs": 6,
+      "seconds": 18.28095731092617,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "periodic-refresh-stale": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 0,
+        "abstention_rate": 0.0,
+        "answerable_exact_match_mean": 0.0,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.0,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.0,
+        "false_abstention_count": 0,
+        "false_abstention_rate": null,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 3,
+        "outdated_fact_error_rate": 0.6,
+        "stale_source_use_count": 5,
+        "stale_source_use_rate": 1.0,
+        "token_f1_mean": 0.0,
+        "total_completion_tokens": 135,
+        "total_prompt_tokens": 1397,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 460.5385079048574,
+            "mean": 436.72928223386407,
+            "min": 423.70801884680986,
+            "n": 5,
+            "p50": 428.4054031595588,
+            "p95": 460.5385079048574,
+            "p99": 460.5385079048574
+          },
+          "reader": {
+            "max": 460.21157782524824,
+            "mean": 436.46826846525073,
+            "min": 423.51594334468246,
+            "n": 5,
+            "p50": 428.11254877597094,
+            "p95": 460.21157782524824,
+            "p99": 460.21157782524824
+          },
+          "with_maintenance": null,
+          "without_maintenance": {
+            "max": 460.5385079048574,
+            "mean": 436.72928223386407,
+            "min": 423.70801884680986,
+            "n": 5,
+            "p50": 428.4054031595588,
+            "p95": 460.5385079048574,
+            "p99": 460.5385079048574
+          }
+        }
+      },
+      "queries": 5,
+      "repairs": 0,
+      "seconds": 2.38170720404014,
+      "stale_source_uses": 5,
+      "verifications": 0
+    },
+    "repair-on-first-access": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 0,
+        "abstention_rate": 0.0,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 271,
+        "total_prompt_tokens": 2467,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 1994.462614879012,
+            "mean": 884.0971627272666,
+            "min": 415.1691901497543,
+            "n": 5,
+            "p50": 425.04070373252034,
+            "p95": 1994.462614879012,
+            "p99": 1994.462614879012
+          },
+          "reader": {
+            "max": 481.06130911037326,
+            "mean": 431.7588681355119,
+            "min": 413.89117343351245,
+            "n": 5,
+            "p50": 424.1597601212561,
+            "p95": 481.06130911037326,
+            "p99": 481.06130911037326
+          },
+          "with_maintenance": {
+            "max": 1994.462614879012,
+            "mean": 1577.901728451252,
+            "min": 1161.3408420234919,
+            "n": 2,
+            "p50": 1161.3408420234919,
+            "p95": 1994.462614879012,
+            "p99": 1994.462614879012
+          },
+          "without_maintenance": {
+            "max": 425.04070373252034,
+            "mean": 421.5607855779429,
+            "min": 415.1691901497543,
+            "n": 3,
+            "p50": 424.47246285155416,
+            "p95": 425.04070373252034,
+            "p99": 425.04070373252034
+          }
+        },
+        "repair": {
+          "count": 2,
+          "first_call_ms": 1580.2014940418303,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 98,
+              "mean": 70.5,
+              "min": 43,
+              "n": 2,
+              "p50": 43,
+              "p95": 98,
+              "p99": 98
+            },
+            "gpu_ms": {
+              "max": 1578.33544921875,
+              "mean": 1128.4797058105469,
+              "min": 678.6239624023438,
+              "n": 2,
+              "p50": 678.6239624023438,
+              "p95": 1578.33544921875,
+              "p99": 1578.33544921875
+            },
+            "prompt_tokens": {
+              "max": 598,
+              "mean": 535,
+              "min": 472,
+              "n": 2,
+              "p50": 472,
+              "p95": 598,
+              "p99": 598
+            },
+            "total_tokens": {
+              "max": 696,
+              "mean": 605.5,
+              "min": 515,
+              "n": 2,
+              "p50": 515,
+              "p95": 696,
+              "p99": 696
+            },
+            "wall_ms": {
+              "max": 1578.361454885453,
+              "mean": 1128.5073629114777,
+              "min": 678.6532709375024,
+              "n": 2,
+              "p50": 678.6532709375024,
+              "p95": 1578.361454885453,
+              "p99": 1578.361454885453
+            }
+          },
+          "retried_operations": 0,
+          "timing_ms": {
+            "repair_generation": {
+              "max": 1579.7567931003869,
+              "mean": 1129.7886613756418,
+              "min": 679.8205296508968,
+              "n": 2,
+              "p50": 679.8205296508968,
+              "p95": 1579.7567931003869,
+              "p99": 1579.7567931003869
+            },
+            "repair_semantic_index": {
+              "max": 0.0002682209014892578,
+              "mean": 0.00023725442588329315,
+              "min": 0.0002062879502773285,
+              "n": 2,
+              "p50": 0.0002062879502773285,
+              "p95": 0.0002682209014892578,
+              "p99": 0.0002682209014892578
+            },
+            "repair_source_lookup": {
+              "max": 0.1636222004890442,
+              "mean": 0.11772150173783302,
+              "min": 0.07182080298662186,
+              "n": 2,
+              "p50": 0.07182080298662186,
+              "p95": 0.1636222004890442,
+              "p99": 0.1636222004890442
+            },
+            "repair_store_and_keyword_index": {
+              "max": 0.2736239694058895,
+              "mean": 0.20614848472177982,
+              "min": 0.13867300003767014,
+              "n": 2,
+              "p50": 0.13867300003767014,
+              "p95": 0.2736239694058895,
+              "p99": 0.2736239694058895
+            },
+            "repair_total": {
+              "max": 1580.2014940418303,
+              "mean": 1130.120622459799,
+              "min": 680.0397508777678,
+              "n": 2,
+              "p50": 680.0397508777678,
+              "p95": 1580.2014940418303,
+              "p99": 1580.2014940418303
+            }
+          },
+          "warm_median_ms": 680.0397508777678
+        }
+      },
+      "queries": 5,
+      "repairs": 2,
+      "seconds": 4.425962910987437,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "verify-only": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 0,
+        "abstention_rate": 0.0,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 300,
+        "total_prompt_tokens": 3275,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 7914.155813865364,
+            "mean": 2723.4026920050383,
+            "min": 951.8799721263349,
+            "n": 5,
+            "p50": 968.7279518693686,
+            "p95": 7914.155813865364,
+            "p99": 7914.155813865364
+          },
+          "reader": {
+            "max": 1459.8272978328168,
+            "mean": 742.7749750204384,
+            "min": 412.1583169326186,
+            "n": 5,
+            "p50": 426.31373880431056,
+            "p95": 1459.8272978328168,
+            "p99": 1459.8272978328168
+          },
+          "with_maintenance": {
+            "max": 7914.155813865364,
+            "mean": 2723.4026920050383,
+            "min": 951.8799721263349,
+            "n": 5,
+            "p50": 968.7279518693686,
+            "p95": 7914.155813865364,
+            "p99": 7914.155813865364
+          },
+          "without_maintenance": null
+        },
+        "verify": {
+          "count": 5,
+          "first_call_ms": 6453.768816776574,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 34,
+              "mean": 34,
+              "min": 34,
+              "n": 5,
+              "p50": 34,
+              "p95": 34,
+              "p99": 34
+            },
+            "gpu_ms": {
+              "max": 6441.80224609375,
+              "mean": 1976.7933837890625,
+              "min": 537.9141235351562,
+              "n": 5,
+              "p50": 547.9286499023438,
+              "p95": 6441.80224609375,
+              "p99": 6441.80224609375
+            },
+            "prompt_tokens": {
+              "max": 397,
+              "mean": 375.8,
+              "min": 344,
+              "n": 5,
+              "p50": 397,
+              "p95": 397,
+              "p99": 397
+            },
+            "total_tokens": {
+              "max": 431,
+              "mean": 409.8,
+              "min": 378,
+              "n": 5,
+              "p50": 431,
+              "p95": 431,
+              "p99": 431
+            },
+            "wall_ms": {
+              "max": 6441.892706789076,
+              "mean": 1976.8362693488598,
+              "min": 537.9462568089366,
+              "n": 5,
+              "p50": 547.9597919620574,
+              "p95": 6441.892706789076,
+              "p99": 6441.892706789076
+            }
+          },
+          "retried_operations": 0,
+          "timing_ms": {
+            "verify_generation": {
+              "max": 6453.490210231394,
+              "mean": 1980.0407538190484,
+              "min": 538.9876551926136,
+              "n": 5,
+              "p50": 549.1109299473464,
+              "p95": 6453.490210231394,
+              "p99": 6453.490210231394
+            },
+            "verify_source_lookup": {
+              "max": 0.16345595940947533,
+              "mean": 0.12485459446907043,
+              "min": 0.06820401176810265,
+              "n": 5,
+              "p50": 0.14707772061228752,
+              "p95": 0.16345595940947533,
+              "p99": 0.16345595940947533
+            },
+            "verify_total": {
+              "max": 6453.768816776574,
+              "mean": 1980.2235710434616,
+              "min": 539.1866378486156,
+              "n": 5,
+              "p50": 549.2228358052671,
+              "p95": 6453.768816776574,
+              "p99": 6453.768816776574
+            }
+          },
+          "warm_median_ms": 545.5758788157254
+        }
+      },
+      "queries": 5,
+      "repairs": 0,
+      "seconds": 14.082997606601566,
+      "stale_source_uses": 0,
+      "verifications": 5
+    }
+  }
+}

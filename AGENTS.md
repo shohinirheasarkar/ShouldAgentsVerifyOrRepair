@@ -20,7 +20,8 @@ The source fact history is authoritative. Derived summaries are caches/derived s
    and behavior, and the contracts below for implementation constraints.
 4. Read `docs/step2/` through `docs/step5/` for the post-midterm steps
    (multi-episode scoring, budget, budget oracle, local LLM mode) and
-   `docs/timeline.md` for overall progress and what remains.
+   `docs/timeline.md` for overall progress, and `docs/final-plan/README.md`
+   for the step-by-step handoff plan to the final submission.
 5. Read `docs/research-grade-memory-handoff.md` when planning future research.
    It is a roadmap, not authorization to implement all its phases. Its original
    current-state list and unchecked boxes predate most of the work below;
@@ -58,7 +59,8 @@ file these were "Step 3", "Step 4", and "Step 5".
 | 2 | Multi-episode scoring for v2 traces, the stale-use penalty λ, and the `periodic-refresh-stale` baseline |
 | 3 | Shared repair budget `B` per reset window with a deferred-repair queue (`--budget`) |
 | 4 | Budget-aware hindsight oracle (exact integer program; greedy heuristic option) |
-| 5 | Opt-in local LLM VERIFY, REPAIR, and fixed answer reader (`--mode llm`), with answer scoring; live Zaratan GPU outputs are still pending |
+| 5 | Opt-in local LLM VERIFY, REPAIR, and fixed answer reader (`--mode llm`), with answer scoring and a live Zaratan H100 run |
+| 6 | Component timing, measured cost profiles from GPU pilots, measured-cost replay (`--cost-profile`), semantic-index profiling, dirty-bit check |
 
 The current checkout implements eight policies. Deterministic workloads have
 been run up to 10,000 memories. Inspect `git status` before editing: work may
@@ -75,7 +77,6 @@ work. The shared repair budget is defined in `docs/step3/README.md`: units of
 Work beyond the implemented extensions needs a separately scoped request and
 plan. In particular, do not start these merely because the roadmap lists them:
 
-- measured-cost profiling and cost-replay mode (planned as post-midterm Step 6);
 - P3 or trained demand predictors (planned as Step 7);
 - hosted APIs or hosted-LLM synthetic text generation; LLM calls outside the
   opt-in `--mode llm` path;
@@ -98,6 +99,7 @@ cost, or research conclusion.
 | `src/verify_repair/retrieval/` | FTS5 keyword retrieval, RRF/hybrid, optional semantic adapter |
 | `src/verify_repair/simulator/` | Typed events, engine/logging/accounting, toy loader, `synthetic-v1` (`synthetic.py`) and `synthetic-v2` (`evolving.py`) workloads, repair budget and queue (`budget.py`), hand-built traces |
 | `src/verify_repair/evaluation.py`, `budget_oracle.py`, `experiments.py` | Evaluator-only oracle/regret scoring (single- and multi-episode), budget-aware oracle, multi-policy experiment runner and seed summaries |
+| `src/verify_repair/costs.py`, `dirty_bit.py` | Measured cost profiles and keyed replay draws; evaluator-only stale-flag precision |
 | `src/verify_repair/llm/`, `answer_scoring.py` | Opt-in local LLM client, versioned prompts, validators, VERIFY/REPAIR builders, fixed answer reader; event-time answer scoring |
 | `scripts/` | Plotting (optional matplotlib), the 10K synthetic-v2 evaluation runner, Zaratan LLM prefetch/Slurm/artifact scripts |
 | `data/synthetic_v2/` | Small saved v2 traces (100 memories) for development and hand checks |
@@ -299,6 +301,7 @@ changes do not need new tests that merely mirror the documentation.
 | `test_evolving.py`, `test_scoring_v2.py` | synthetic-v2 generation/validation/replay; multi-episode scoring, stale-use oracle, hand-checked costs |
 | `test_budget.py`, `test_budget_oracle.py` | Budget windows, deferral, queue order, never overspending; budget oracle vs brute force |
 | `test_llm_validation.py`, `test_llm_operations.py`, `test_answer_reader_and_scoring.py` | Offline (fake-client) LLM validators, prompt-injection guards, VERIFY/REPAIR rollback, reader and answer scoring |
+| `test_costs.py`, `test_dirty_bit.py` | Keyed draws shared across policies, estimate-only policies, measured oracles vs exhaustive search; dirty-bit structural/semantic precision |
 | `test_llm_optional.py` | Opt-in live 4-bit LLM integration (`RUN_LLM=1`, cached weights, GPU) |
 | `test_bootstrap.py` | SQLite foreign keys/schema |
 | `test_semantic_optional.py` | Opt-in live BGE-M3/FAISS integration |
@@ -383,5 +386,5 @@ Expected:
 
 The accepted original milestone plan remains complete. Maintain the implemented
 baselines and both rounds of scoped steps within the requested task; start
-subsequent research work (post-midterm Step 6 onward) only under its own scope.
+subsequent research work (post-midterm Step 7 onward) only under its own scope.
 Updating this file does not authorize the next phase.
