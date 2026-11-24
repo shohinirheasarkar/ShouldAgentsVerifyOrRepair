@@ -24,7 +24,21 @@ This step adds an opt-in local LLM mode (`--mode llm`) for **VERIFY**, **REPAIR*
    - Every policy uses the **exact same frozen `AnswerReader`** and prompt, receiving only a policy-neutral `EvidencePacket` (fresh summary, repaired summary, verified current evidence, stale summary on `NO_OP`, or empty evidence on retrieval miss).
    - `score_run_answers()` evaluates generated answers against event-time ledger truth: normalized Exact Match, Token F1, abstention accuracy / false abstentions / missed abstentions (handling retractions and retrieval misses separately), and **outdated-fact errors** (kept strictly separate from substrate `used_stale_source`).
 
+## Google Colab (simplest first run)
+
+[`notebooks/step5_colab.ipynb`](../../notebooks/step5_colab.ipynb) runs the
+offline suite, the live 4-bit integration test, the Step 5.6 canonical check,
+the toy policy runs, and the CLI smoke command on a free Colab GPU, then
+downloads `step5_colab_out.zip` (runtime manifest, scored answers, logs, and
+environment details). Open it at
+<https://colab.research.google.com/github/shohinirheasarkar/ShouldAgentsVerifyOrRepair/blob/step5-6-llm-costs/notebooks/step5_colab.ipynb>,
+choose **Runtime → Change runtime type → T4 GPU**, then **Run all**. The
+per-call timeout is raised to 180 s for slower T4 GPUs.
+
 ## Zaratan setup and runnable commands
+
+Log in with `ssh <UMD directory ID>@login.zaratan.umd.edu` (UMD password and
+Duo). Jobs need membership in the `cmsc848n-class` allocation.
 
 Keep the repository, virtual environment, pip cache, and HuggingFace model cache under `/scratch/zt1/project/cmsc848n/user/$USER/` (avoid filling Zaratan's small home-directory quota).
 
@@ -34,7 +48,7 @@ Keep the repository, virtual environment, pip cache, and HuggingFace model cache
 export SCRATCH_BASE="/scratch/zt1/project/cmsc848n/user/$USER"
 mkdir -p "$SCRATCH_BASE"
 cd "$SCRATCH_BASE"
-git clone -b step5-local-llm https://github.com/shohinirheasarkar/ShouldAgentsVerifyOrRepair.git
+git clone -b step5-6-llm-costs https://github.com/shohinirheasarkar/ShouldAgentsVerifyOrRepair.git
 cd ShouldAgentsVerifyOrRepair
 
 module purge
