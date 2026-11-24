@@ -18,10 +18,13 @@ The source fact history is authoritative. Derived summaries are caches/derived s
 2. Read `README.md` for current setup, CLI commands, and limitations.
 3. Read the synthetic workload and P1/P2 sections of `README.md` for usage
    and behavior, and the contracts below for implementation constraints.
-4. Read `docs/research-grade-memory-handoff.md` when planning future research.
+4. Read `docs/step2/` through `docs/step5/` for the post-midterm steps
+   (multi-episode scoring, budget, budget oracle, local LLM mode) and
+   `docs/timeline.md` for overall progress and what remains.
+5. Read `docs/research-grade-memory-handoff.md` when planning future research.
    It is a roadmap, not authorization to implement all its phases. Its original
-   current-state list and unchecked boxes predate the additional baselines and
-   Step 3; check the implementation and tests before treating an item as missing.
+   current-state list and unchecked boxes predate most of the work below;
+   check the implementation and tests before treating an item as missing.
 
 The original plan's handoff and scope exclusions describe the original phase.
 Later scoped extensions below are already implemented. Preserve the accepted
@@ -37,37 +40,52 @@ DAG, staleness propagation, deterministic VERIFY/REPAIR, replayable simulator,
 nominal cost logs, toy YAML inputs, keyword retrieval, RRF/hybrid retrieval,
 and optional BGE-M3 + FAISS retrieval.
 
-Subsequent scoped work adds three comparison baselines and **Step 3:
-deterministic synthetic workloads**, followed by **Step 4: P1 threshold
-maintenance** and **Step 5: P2 prediction-assisted
-threshold**. The current checkout implements seven
-policies and generate/save/load/replay CLI commands. Controlled synthetic workload validation has covered
-up to 10,000 memories. Inspect `git status` before editing: work
-may be uncommitted. Implementation and passing tests do not themselves imply
-owner acceptance, a commit, or a push.
+Two rounds of scoped work followed. Step numbers restart between them, so
+name the round when referring to a step.
+
+**Midterm round (Oct 2026).** Three comparison baselines; deterministic
+`synthetic-v1` workloads (one correction per memory); P1 threshold maintenance;
+P2 prediction-assisted threshold; the single-episode hindsight oracle, regret
+scoring, opt-in latency timing, and the `run-experiment` /
+`summarize-experiment` commands (`docs/midterm/`). In earlier versions of this
+file these were "Step 3", "Step 4", and "Step 5".
+
+**Post-midterm round (Nov 2026, `docs/stepN/`).**
+
+| Step | Adds |
+| --- | --- |
+| 1 | `synthetic-v2` evolving workloads (`generate-evolving`): repeated changes of all four types, stable/bursty/shifting demand, optional fan-out |
+| 2 | Multi-episode scoring for v2 traces, the stale-use penalty λ, and the `periodic-refresh-stale` baseline |
+| 3 | Shared repair budget `B` per reset window with a deferred-repair queue (`--budget`) |
+| 4 | Budget-aware hindsight oracle (exact integer program; greedy heuristic option) |
+| 5 | Opt-in local LLM VERIFY, REPAIR, and fixed answer reader (`--mode llm`), with answer scoring; live Zaratan GPU outputs are still pending |
+
+The current checkout implements eight policies. Deterministic workloads have
+been run up to 10,000 memories. Inspect `git status` before editing: work may
+be uncommitted. Implementation and passing tests do not themselves imply owner
+acceptance, a commit, or a push.
 
 The project owners define **access uncertainty** as uncertainty about how
 frequently future queries access a specific fact or memory component. The
-synthetic generator controls those future counts; P2 estimates future reuse from
-past accesses with a simple moving average. Learned prediction remains future
-work. Oldest-First has repair slots per tick, but a shared research budget and
-its horizon are not yet formally defined or implemented.
+generators control those future counts; P2 estimates future reuse from past
+accesses with a decayed moving average. Learned prediction (P3) remains future
+work. The shared repair budget is defined in `docs/step3/README.md`: units of
+`c_r`, a reset window (default one hour), no carry-over.
 
 Work beyond the implemented extensions needs a separately scoped request and
 plan. In particular, do not start these merely because the roadmap lists them:
 
-- P3 or trained demand predictors;
-- a budget-aware oracle, or shared-budget optimization/scheduling (the
-  single-episode hindsight oracle and regret scoring are implemented);
-- generative LLM calls, hosted APIs, LLM VERIFY/REPAIR/answer generation, or
-  hosted-LLM synthetic text generation;
+- measured-cost profiling and cost-replay mode (planned as post-midterm Step 6);
+- P3 or trained demand predictors (planned as Step 7);
+- hosted APIs or hosted-LLM synthetic text generation; LLM calls outside the
+  opt-in `--mode llm` path;
 - semantic dirty-bit LLM evaluation or external benchmark integration;
-- research experiments beyond the scoped controlled workload checks, including
+- research experiments beyond scoped controlled workload checks, including
   100K/1M scale runs.
 
-The existing 100/1,000/10,000-memory Step 3 checks are controlled development
-validation. They establish no held-out accuracy, measured model cost, or
-research conclusion.
+Results under `docs/midterm/` and `docs/step2/`–`docs/step4/` use nominal costs
+and development seeds. They establish no held-out accuracy, measured model
+cost, or research conclusion.
 
 ## Repository map
 
@@ -78,9 +96,11 @@ research conclusion.
 | `src/verify_repair/maintenance/` | Deterministic template builder and VERIFY/REPAIR execution |
 | `src/verify_repair/policies/` | Storage-free decisions and scheduled maintenance hooks |
 | `src/verify_repair/retrieval/` | FTS5 keyword retrieval, RRF/hybrid, optional semantic adapter |
-| `src/verify_repair/simulator/` | Typed events, engine/logging/accounting, toy loader, synthetic workloads |
-| `src/verify_repair/evaluation.py`, `experiments.py` | Evaluator-only oracle/regret scoring; multi-policy experiment runner and seed summaries |
-| `scripts/plot_experiment.py` | Optional matplotlib figures from a summary CSV |
+| `src/verify_repair/simulator/` | Typed events, engine/logging/accounting, toy loader, `synthetic-v1` (`synthetic.py`) and `synthetic-v2` (`evolving.py`) workloads, repair budget and queue (`budget.py`), hand-built traces |
+| `src/verify_repair/evaluation.py`, `budget_oracle.py`, `experiments.py` | Evaluator-only oracle/regret scoring (single- and multi-episode), budget-aware oracle, multi-policy experiment runner and seed summaries |
+| `src/verify_repair/llm/`, `answer_scoring.py` | Opt-in local LLM client, versioned prompts, validators, VERIFY/REPAIR builders, fixed answer reader; event-time answer scoring |
+| `scripts/` | Plotting (optional matplotlib), the 10K synthetic-v2 evaluation runner, Zaratan LLM prefetch/Slurm/artifact scripts |
+| `data/synthetic_v2/` | Small saved v2 traces (100 memories) for development and hand checks |
 | `src/verify_repair/cli.py`, `config.py` | CLI dispatch and toy configuration loading |
 | `tests/` | Flat test layout; use the existing files rather than the original plan's suggested subdirectories |
 | `data/toy/`, `configs/toy.yaml` | Inspectable toy facts/summaries/events and nominal costs |
@@ -99,6 +119,7 @@ the run. Saved workload JSON is input data, not a persisted simulator database.
 | `oldest-first` | VERIFY until repaired | Repair up to the slot limit, ordered by `(stale_since, summary_id)` ascending |
 | `p1` | REPAIR when the next VERIFY would meet/exceed one repair's cost; otherwise VERIFY | No background repair; reset count on relevant changes or repair |
 | `p2` | REPAIR early for a confident high forecast; otherwise follow P1 exactly | No background repair; preserve popularity history across correction/repair |
+| `periodic-refresh-stale` | NO_OP: answer from the stored summary, charged λ per stale use | Repair all stale summaries at each tick, ordered by summary ID |
 
 Scheduled policies default to one tick per **100 processed events**;
 Oldest-First defaults to **one repair slot per tick**. Both settings must be
@@ -179,6 +200,15 @@ Oldest-First behavior supersedes the original plan's `stale_since` reset detail.
 Repairing a parent must not silently clear its stale descendants.
 
 ## Synthetic workload contract
+
+The rules below are the **`synthetic-v1`** contract and still apply to it.
+**`synthetic-v2`** (`evolving.py`, `data/synthetic_v2/README.md`) deliberately
+relaxes several of them: 1–`d` facts per summary, repeated source changes of
+all four types as a Poisson process interleaved with queries, stable/bursty/
+shifting demand per phase, and optional bounded fan-out. Its evaluator-only
+metadata (groups per phase, exact accesses per source-change episode) must
+likewise never reach a policy. Do not change either format's semantics
+incidentally; add a new format version instead.
 
 - One memory is one independent entity summary over three initial facts;
   entities are people, projects, or places.
@@ -266,6 +296,10 @@ changes do not need new tests that merely mirror the documentation.
 | `test_hybrid.py` | Exact RRF arithmetic and hybrid ranking with fake semantic retrieval |
 | `test_synthetic.py`, `test_cli.py` | Seed isolation, artifact validation/round trips, demand isolation, retrieval, replay, CLI input preservation |
 | `test_evaluation.py` | Oracle vs exhaustive search, hand-computed regret, tick rows, opt-in latency, experiment CSVs |
+| `test_evolving.py`, `test_scoring_v2.py` | synthetic-v2 generation/validation/replay; multi-episode scoring, stale-use oracle, hand-checked costs |
+| `test_budget.py`, `test_budget_oracle.py` | Budget windows, deferral, queue order, never overspending; budget oracle vs brute force |
+| `test_llm_validation.py`, `test_llm_operations.py`, `test_answer_reader_and_scoring.py` | Offline (fake-client) LLM validators, prompt-injection guards, VERIFY/REPAIR rollback, reader and answer scoring |
+| `test_llm_optional.py` | Opt-in live 4-bit LLM integration (`RUN_LLM=1`, cached weights, GPU) |
 | `test_bootstrap.py` | SQLite foreign keys/schema |
 | `test_semantic_optional.py` | Opt-in live BGE-M3/FAISS integration |
 
@@ -276,7 +310,11 @@ RUN_SEMANTIC=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m pytest -o addop
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -m verify_repair.cli run-toy --policy eager-refresh --retrieval hybrid
 ```
 
-Core pytest excludes the semantic marker and must remain independent of model
+The live LLM check is similar: `RUN_LLM=1 HF_HUB_OFFLINE=1
+TRANSFORMERS_OFFLINE=1 python -m pytest -o addopts='' -m llm` on a GPU with
+cached weights (see `docs/step5/README.md`).
+
+Core pytest excludes the semantic and llm markers and must remain independent of model
 downloads. Do not install/download large models merely for an unrelated change;
 report optional checks as unrun when unavailable. A skipped semantic test is not
 a passed integration check. Use the offline flags with an existing cache.
@@ -344,5 +382,6 @@ Expected:
 ## Phase boundary
 
 The accepted original milestone plan remains complete. Maintain the implemented
-baselines and Steps 3–5 within the requested task; start subsequent research work
-only under its own scope. Updating this file does not authorize the next phase.
+baselines and both rounds of scoped steps within the requested task; start
+subsequent research work (post-midterm Step 6 onward) only under its own scope.
+Updating this file does not authorize the next phase.
