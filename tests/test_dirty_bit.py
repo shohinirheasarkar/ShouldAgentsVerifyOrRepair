@@ -55,7 +55,7 @@ def test_semantic_check_agrees_with_a_reader_that_reads_the_evidence():
     assert report["structural_flag_precision"] == pytest.approx(3 / 5)
     assert report["semantic_flag_precision"] == pytest.approx(3 / 5)
     assert report["fresh_answer_accuracy"] == 1.0
-    assert report["needs_review"] == 3  # the three needed flags have disagreeing answers
+    assert report["needs_review"] == 0  # structural and semantic judgments agree everywhere
     row = judgments[0].to_row()
     assert {"stale_answer", "fresh_answer", "needs_review", "structurally_needed"} <= set(row)
 
@@ -82,3 +82,13 @@ def test_wilson_interval():
     low, high = wilson_interval(50, 100)
     assert low == pytest.approx(0.4038, abs=1e-3) and high == pytest.approx(0.5962, abs=1e-3)
     assert wilson_interval(10, 10)[1] == pytest.approx(1.0)
+
+
+def test_reader_errors_are_marked_for_review():
+    """A reader that ignores the evidence gets fresh answers wrong, and those need review."""
+    stubborn = AnswerReader(FakeLLMClient(handler=lambda request: json.dumps(
+        {"answer": "amber", "abstained": False, "cited_sources": []})))
+    accesses = collect_stale_accesses(two_fact_trace())
+    judgments = judge_sample(accesses, stubborn, sample_size=5, seed=0)
+    wrong_fresh = [j for j in judgments if not j.fresh_correct]
+    assert wrong_fresh and all(j.needs_review for j in wrong_fresh)

@@ -16,8 +16,8 @@ measures how often a stale flag is a false alarm, on synthetic-v2 traces:
    when the stale-summary answer is wrong.
 
 Flag precision is the fraction of stale flags that were needed, reported with
-a Wilson 95% interval. Cases where the stale and fresh answers disagree, or
-where the fresh answer is itself wrong, are returned for human review. Nothing
+a Wilson 95% interval. Cases where the fresh answer is itself wrong, or where
+the semantic and structural judgments disagree, are marked for human review. Nothing
 here is visible to policies, and no stored state is modified.
 """
 from __future__ import annotations
@@ -67,10 +67,10 @@ class DirtyBitJudgment:
 
     @property
     def needs_review(self) -> bool:
-        """Answers disagree, or the fresh answer is wrong (a reader or rebuild failure)."""
-        return (not self.fresh_correct) or (
-            self.stale_abstained != self.fresh_abstained
-            or not exact_match(self.stale_answer, self.fresh_answer))
+        """Unexpected cases for a human: the fresh answer is wrong (reader failure), or the
+        semantic and structural judgments disagree (for example, a stale answer that is
+        right although the asked fact changed)."""
+        return (not self.fresh_correct) or self.semantically_needed != self.access.structurally_needed
 
     def to_row(self) -> dict:
         row = asdict(self.access)
