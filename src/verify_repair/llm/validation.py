@@ -26,6 +26,26 @@ _RETRACTION_MARKERS = (
     "no longer",
     "unknown",
     "none",
+<<<<<<< Updated upstream
+=======
+    "deleted",
+    "withdrawn",
+    "unspecified",
+    "not specified",
+    "not provided",
+    "not listed",
+    "no information",
+    "no record",
+    "does not have",
+    "has no ",
+    "unassigned",
+    "not assigned",
+    "revoked",
+    "n/a",
+    "missing",
+    "redacted",
+    "cleared",
+>>>>>>> Stashed changes
 )
 
 _ABSTENTION_MARKERS = frozenset({

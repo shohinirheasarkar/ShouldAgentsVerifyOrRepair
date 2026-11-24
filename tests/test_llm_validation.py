@@ -317,3 +317,136 @@ def test_offline_snapshot_resolution_without_refs_main(tmp_path):
     )
     assert resolved_online == "Qwen/Qwen2.5-7B-Instruct"
     assert rev_online is None
+<<<<<<< Updated upstream
+=======
+
+
+def test_validate_repair_accepts_exact_qwen_output_without_tautological_name_claim():
+    # Exact raw output observed from live 4-bit Qwen/Qwen2.5-7B-Instruct on Zaratan H100.
+    req = _alice_request()
+    qwen_raw = json.dumps({
+        "summary_text": "Alice is a researcher living in Boston.",
+        "claims": [
+            {"slot": "job", "statement": "Alice is a researcher.", "source_ref": "alice_job@v1"},
+            {"slot": "location", "statement": "Alice is living in Boston.", "source_ref": "alice_location@v2"},
+        ],
+    })
+    out = validate_repair_output(qwen_raw, req)
+    assert out.summary_text == "Alice is a researcher living in Boston."
+    assert [c.slot for c in out.claims] == ["job", "location"]
+    assert out.fidelity["unchanged_preserved_ratio"] == 1.0
+    assert out.fidelity["changed_updated_ratio"] == 1.0
+
+    # Still rejects if Alice (identity slot) is dropped from summary_text
+    dropped_alice = json.dumps({
+        "summary_text": "A researcher living in Boston.",
+        "claims": [
+            {"slot": "job", "statement": "She is a researcher.", "source_ref": "alice_job@v1"},
+            {"slot": "location", "statement": "She lives in Boston.", "source_ref": "alice_location@v2"},
+        ],
+    })
+    with pytest.raises(LLMValidationError, match="dropped required entity 'Alice'"):
+        validate_repair_output(dropped_alice, req)
+
+    # Still rejects if a non-identity unchanged slot (job) is omitted from claims
+    missing_job = json.dumps({
+        "summary_text": "Alice is a researcher living in Boston.",
+        "claims": [
+            {"slot": "location", "statement": "Alice lives in Boston.", "source_ref": "alice_location@v2"},
+        ],
+    })
+    with pytest.raises(LLMValidationError, match="missing required slots: \\['job'\\]"):
+        validate_repair_output(missing_job, req)
+
+    # Still rejects duplicated @v1@v1 suffix
+    dup_suffix = json.dumps({
+        "summary_text": "Alice is a researcher living in Boston.",
+        "claims": [
+            {"slot": "name", "statement": "Alice", "source_ref": "alice_name@v1@v1"},
+            {"slot": "job", "statement": "Alice is a researcher.", "source_ref": "alice_job@v1"},
+            {"slot": "location", "statement": "Alice lives in Boston.", "source_ref": "alice_location@v2"},
+        ],
+    })
+    with pytest.raises(LLMValidationError, match="expected exact current ref 'alice_name@v1'"):
+        validate_repair_output(dup_suffix, req)
+
+    # Still rejects if name itself changed and is omitted from claims
+    changed_name_req = RepairBuildRequest(
+        summary_id="alice_profile",
+        old_text="Alice is a researcher living in Maryland.",
+        text_template="{name} is a {job} living in {location}.",
+        old_facts=req.old_facts,
+        current_facts={
+            **req.old_facts,
+            "name": _fact("alice_name", 2, "Alice", "name", "Alicia", ChangeType.CORRECTION),
+        },
+        changed_slots=("name",),
+    )
+    missing_changed_name = json.dumps({
+        "summary_text": "Alicia is a researcher living in Maryland.",
+        "claims": [
+            {"slot": "job", "statement": "Alicia is a researcher.", "source_ref": "alice_job@v1"},
+            {"slot": "location", "statement": "Alicia lives in Maryland.", "source_ref": "alice_location@v1"},
+        ],
+    })
+    with pytest.raises(LLMValidationError, match="missing required slots: \\['name'\\]"):
+        validate_repair_output(missing_changed_name, changed_name_req)
+
+
+def test_validate_reader_accepts_null_cited_sources_on_abstention():
+    raw = json.dumps({"answer": "INSUFFICIENT_EVIDENCE", "abstained": True, "cited_sources": None})
+    out = validate_reader_output(raw, {"alice_location@v2"})
+    assert out.abstained is True
+    assert out.cited_sources == ()
+
+
+def test_validate_repair_retraction_phrasings_and_expiry_rollback():
+    old_ret = {"office": _fact("erin_office", 1, "Erin", "office", "Room E")}
+    cur_ret = {"office": _fact("erin_office", 2, "Erin", "office", None, ChangeType.RETRACTION)}
+    ret_req = RepairBuildRequest(
+        summary_id="erin_office",
+        old_text="Erin works in Room E.",
+        text_template="Erin works in {office}.",
+        old_facts=old_ret,
+        current_facts=cur_ret,
+        changed_slots=("office",),
+    )
+    for text, stmt in (
+        ("Erin does not have an assigned office.", "Erin does not have an office."),
+        ("Erin has no office.", "Erin has no office."),
+        ("Erin's office is unassigned.", "Office is unassigned."),
+    ):
+        raw = json.dumps({
+            "summary_text": text,
+            "claims": [{"slot": "office", "statement": stmt, "source_ref": "erin_office@v2"}],
+        })
+        out = validate_repair_output(raw, ret_req)
+        assert "Erin" in out.summary_text
+
+    # Temporary exception expiry: v2 (Room Z) reverts back to v1 (Room A).
+    old_exp = {"office": _fact("alice_office", 2, "Alice", "office", "Room Z", ChangeType.TEMPORARY_EXCEPTION)}
+    cur_exp = {"office": _fact("alice_office", 1, "Alice", "office", "Room A")}
+    exp_req = RepairBuildRequest(
+        summary_id="alice_office",
+        old_text="Alice works in Room Z.",
+        text_template="Alice works in {office}.",
+        old_facts=old_exp,
+        current_facts=cur_exp,
+        changed_slots=("office",),
+    )
+    reverted = json.dumps({
+        "summary_text": "Alice works in Room A.",
+        "claims": [{"slot": "office", "statement": "Alice works in Room A.", "source_ref": "alice_office@v1"}],
+    })
+    out_exp = validate_repair_output(reverted, exp_req)
+    assert out_exp.summary_text == "Alice works in Room A."
+    assert out_exp.claims[0].source_ref == "alice_office@v1"
+
+
+def test_reader_system_prompt_preserves_verified_stale_answering_contract():
+    from verify_repair.llm.prompts import READER_SYSTEM_PROMPT
+
+    assert "only describes a different attribute" not in READER_SYSTEM_PROMPT
+    assert "<required_claim_slots>" not in READER_SYSTEM_PROMPT
+    assert "using ONLY the facts explicitly stated in <evidence>" in READER_SYSTEM_PROMPT
+>>>>>>> Stashed changes
