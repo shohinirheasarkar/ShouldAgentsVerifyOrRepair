@@ -1,0 +1,62 @@
+=== Environment ===
+code commit: 7533be2c3ca53044407c4ca682c1e33e6058d40f
+NVIDIA H100 80GB HBM3, 81559 MiB, 595.71.05
+4
+=== 1. Step 6 pilots (one model load) ===
+Python 3.11.13
+toy policy=verify-only queries=5 verifications=5 repairs=0 seconds=14
+toy policy=eager-refresh queries=5 verifications=0 repairs=6 seconds=18
+toy policy=repair-on-first-access queries=5 verifications=0 repairs=2 seconds=4
+toy policy=periodic-refresh-stale queries=5 verifications=0 repairs=0 seconds=2
+pilot policy=verify-only FAILED: LLMVerificationError('LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value \'cedar\' for changed slot \'attr03\' (last_output=\'{"verified_evidence": "The current attr05 of Entity000922 is amber.", "cited_sources": ["memory_000922_attr05@v1"], "retracted_slots": []}\')')
+pilot policy=repair-on-first-access FAILED: LLMValidationError('LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot \'attr01\' as retracted/unavailable (last_output=\'{"summary_text": "Entity000133 record: attr02 garnet.", "claims": [{"slot": "attr01", "statement": "[RETRACTED]", "source_ref": "memory_000133_attr01@v2"}, {"slot": "attr02", "statement": "garnet", "source_ref": "memory_000133_attr02@v1"}]}\')')
+pilot_quality policy=verify-only FAILED: LLMVerificationError('LLM VERIFY failed validation after 3 attempt(s): verified_evidence missing current value \'cedar\' for changed slot \'attr03\' (last_output=\'{"verified_evidence": "The current attr05 of Entity000922 is amber.", "cited_sources": ["memory_000922_attr05@v1"], "retracted_slots": []}\')')
+pilot_quality policy=repair-on-first-access FAILED: LLMValidationError('LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot \'attr01\' as retracted/unavailable (last_output=\'{"summary_text": "Entity000133 record: attr02 garnet.", "claims": [{"slot": "attr01", "statement": "[RETRACTED]", "source_ref": "memory_000133_attr01@v2"}, {"slot": "attr02", "statement": "attr02 garnet", "source_ref": "memory_000133_attr02@v1"}]}\')')
+{
+ "stage_seconds": {
+  "model_load": 611.7467576772906,
+  "toy": 43.13757642172277,
+  "pilot_cost": 151.5767141492106,
+  "pilot_quality": 552.6938372100703,
+  "dirty_bit": 349.15026910742745
+ },
+ "cost_profiles": {
+  "wall_ms": {
+   "failed": "cost profile needs pooled samples for verify"
+  },
+  "gpu_ms": {
+   "failed": "cost profile needs pooled samples for verify"
+  },
+  "total_tokens": {
+   "failed": "cost profile needs pooled samples for verify"
+  }
+ },
+ "dirty_bit": {
+  "stale_accesses": 8734,
+  "structural_flag_precision": 0.521868559651935,
+  "structural_flag_precision_ci95": [
+   0.5113852386040196,
+   0.5323326523416589
+  ],
+  "sample_size": 300,
+  "semantic_flag_precision": 0.5466666666666666,
+  "semantic_flag_precision_ci95": [
+   0.49009847469408696,
+   0.6020548479732418
+  ],
+  "fresh_answer_accuracy": 0.9866666666666667,
+  "fresh_answer_accuracy_ci95": [
+   0.9662244695197068,
+   0.9948030382967227
+  ],
+  "sample_structurally_needed": 174,
+  "stale_wrong_given_structurally_needed": 0.9425287356321839,
+  "stale_wrong_given_not_structurally_needed": 0.0,
+  "needs_review": 164
+ }
+}
+=== 2. Semantic-index profile (Step 6.3) ===
+10 {'full_rebuild_ms': 29.24, 'single_embed_ms': 15.5, 'search_ms': 23.43}
+100 {'full_rebuild_ms': 159.21, 'single_embed_ms': 15.48, 'search_ms': 14.08}
+1000 {'full_rebuild_ms': 691.01, 'single_embed_ms': 15.5, 'search_ms': 14.39}
+=== Step 6 Zaratan pilots complete: /scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/docs/step6/zaratan_24252085 ===

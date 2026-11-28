@@ -1,0 +1,51 @@
+=== Environment ===
+Python 3.11.13
+NVIDIA H100 80GB HBM3, 81559 MiB, 595.71.05
+=== 1. Core offline test suite ===
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 91%]
+................................................................         [100%]
+=============================== warnings summary ===============================
+../venv-llm/lib64/python3.11/site-packages/_pytest/python.py:144
+  /scratch/zt1/project/cmsc848n/user/aharn1/venv-llm/lib64/python3.11/site-packages/_pytest/python.py:144: PytestRemovedIn10Warning: Passing a non-Collection iterable to parametrize is deprecated.
+  Test: tests/test_evaluation.py::test_oracle_matches_exhaustive_search, argvalues type: product
+  Please convert to a list or tuple.
+  See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators
+    metafunc.parametrize(*marker.args, **marker.kwargs, _param_mark=marker)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+712 passed, 2 deselected, 1 warning in 118.31s (0:01:58)
+=== 2. Opt-in live 4-bit LLM integration test ===
+============================= test session starts ==============================
+platform linux -- Python 3.11.13, pytest-9.2.0, pluggy-1.7.0 -- /scratch/zt1/project/cmsc848n/user/aharn1/venv-llm/bin/python
+cachedir: .pytest_cache
+rootdir: /scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 1 item
+
+tests/test_llm_optional.py::test_live_local_llm_canonical_maryland_to_boston PASSED [100%]
+
+======================== 1 passed in 402.84s (0:06:42) =========================
+=== 3. Step 5.6 canonical + full toy suite (single model load) ===
+=== Step 5.6 Canonical Maryland->Boston ===
+canonical policy=verify-only verifications=3 repairs=0 is_stale=True em=1.00 outdated_errors=0 text='Alice is a researcher living in Maryland.'
+canonical policy=eager-refresh verifications=0 repairs=2 is_stale=False em=1.00 outdated_errors=0 text='Alice is a researcher living in Boston.'
+canonical policy=repair-on-first-access verifications=0 repairs=1 is_stale=False em=1.00 outdated_errors=0 text='Alice is a researcher living in Boston.'
+canonical policy=periodic-refresh-stale verifications=0 repairs=0 is_stale=True em=0.00 outdated_errors=3 text='Alice is a researcher living in Maryland.'
+=== Full Toy Trace Across Policies ===
+toy policy=verify-only queries=5 verifications=5 repairs=0 em=0.600 f1=0.600 abstentions=0 outdated_errors=0 prompt_tokens=3275 completion_tokens=300
+toy policy=eager-refresh queries=5 verifications=0 repairs=6 em=0.600 f1=0.600 abstentions=2 outdated_errors=0 prompt_tokens=5050 completion_tokens=555
+toy policy=repair-on-first-access queries=5 verifications=0 repairs=2 em=0.600 f1=0.600 abstentions=0 outdated_errors=0 prompt_tokens=2467 completion_tokens=271
+toy policy=periodic-refresh-stale queries=5 verifications=0 repairs=0 em=0.000 f1=0.000 abstentions=0 outdated_errors=3 prompt_tokens=1397 completion_tokens=135
+=== 4. Standalone CLI toy smoke command (Step 5.1) ===
+answers=5 exact_match=0.600 token_f1=0.600 abstentions=0 outdated_fact_errors=0 prompt_tokens=3275 completion_tokens=300
+policy=verify-only queries=5 corrections/expiries=5 verifications=5 repairs=0 nominal_verify_cost=5 nominal_repair_cost=0 stale_source_uses=0
+=== Step 5 Zaratan validation complete: /scratch/zt1/project/cmsc848n/user/aharn1/ShouldAgentsVerifyOrRepair/docs/step5/zaratan_24252063 ===

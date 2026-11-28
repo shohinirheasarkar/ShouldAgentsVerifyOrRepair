@@ -12,6 +12,7 @@ Long-running agents may retain summaries built from facts that later change. Whe
 | [README.md](README.md) | Project overview and contribution guide | Current |
 | [docs/proposal.md](docs/proposal.md) | Proposal requirements| Draft checklist |
 | [docs/timeline.md](docs/timeline.md) | Progress against the proposal timeline and next steps | Current |
+| [docs/final-plan/README.md](docs/final-plan/README.md) | Step-by-step handoff plan from the midterm to final submission | Active |
 | [docs/midterm.md](docs/midterm.md) | Midterm requirements| Pending |
 | [docs/artifact-audit.md](docs/artifact-audit.md) | Audit rubric and reproducibility evidence | Pending |
 | [docs/final-presentation.md](docs/final-presentation.md) | Presentation rubric and slides | Pending |
@@ -340,6 +341,41 @@ via `python scripts/run_canonical_llm.py --mode fake`. See
 [`docs/step5/README.md`](docs/step5/README.md) for Zaratan weight prefetch
 (`scripts/prefetch_llm_model.py`) and Slurm batch submission
 (`scripts/zaratan_step5.sbatch`).
+
+The current bundle is `llm-prompts-v6` (`reader-v6`; VERIFY/REPAIR prompts
+remain v4). VERIFY validates the queried attribute rather than requiring
+every changed fact. The reader uses the successful v4 model-facing prompt
+plus a deterministic support check for explicit single-attribute questions,
+using supplied source identities. The v5 prompt-only fix regressed live stale
+answering (job 24299576). The focused v6 live check was reported as passed,
+and the v6 Step 6 pilot completed in Zaratan job 24312071. See
+`docs/step6/README.md` for the corrected cost profile and independent review
+item. Saved v4 costs and scores remain historical measurements.
+
+## Measured costs, cost replay, and dirty bits (Step 6)
+
+See [`docs/step6/README.md`](docs/step6/README.md). In short:
+
+- `--measure-latency` now also logs per-row component timings (`timing_ms`:
+  retrieval, source lookup, generation, store/keyword index, semantic index,
+  reader) and `query_visible` (False for correction-time, tick, and queue
+  repairs).
+- `scripts/run_step6_pilot.py` measures LLM VERIFY/REPAIR/reader costs on the
+  toy trace and a 1K synthetic-v2 pilot and writes `cost-profile-v1` files
+  (`wall_ms`, `gpu_ms`, `total_tokens`). `--mode deterministic` runs offline.
+- `--cost-profile PATH` (synthetic-v2, `run-synthetic` / `run-experiment`)
+  replays measured costs: keyed draws shared by every policy and both oracles;
+  policies see the profile means as fixed `c_v` / `c_r`. Rows carry
+  `cost_profile_id`. Replay results are not LLM-in-the-loop measurements.
+- `src/verify_repair/dirty_bit.py` measures stale-flag precision (structural
+  on every stale access; semantic with the frozen reader on a sample).
+
+```bash
+python scripts/run_step6_pilot.py --mode deterministic --output-dir /tmp/step6-det
+PYTHONPATH=src python -m verify_repair.cli run-experiment --workload data/synthetic_v2/stable-100-seed1.json \
+  --cost-profile docs/step6/zaratan_24312071/cost_profile_wall_ms.json \
+  --stale-penalty 2000 --output /tmp/measured.csv
+```
 
 ## Tutorial notebooks
 - to be added -

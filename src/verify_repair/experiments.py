@@ -57,7 +57,8 @@ DEFAULT_STALE_PENALTY = 10.0
 RUN_KEYS = (
     "workload_format", "memories", "policy", "verify_cost", "repair_cost", "cost_ratio",
     "stale_penalty", "oracle", "refresh_interval_events", "repair_slots_per_tick",
-    "budget_units", "budget_window_seconds", "queue_order", "budget_oracle_method", "group",
+    "budget_units", "budget_window_seconds", "queue_order", "budget_oracle_method",
+    "cost_profile_id", "group",
 )
 # Run-level budget counters, reported on the "all" row only.
 BUDGET_METRICS = ("deferrals", "executed_from_queue", "requeued", "still_queued", "peak_queue",
@@ -65,7 +66,7 @@ BUDGET_METRICS = ("deferrals", "executed_from_queue", "requeued", "still_queued"
 # Columns added after the midterm; older CSVs without them still summarize.
 LEGACY_DEFAULTS = {"workload_format": SYNTHETIC_FORMAT, "stale_penalty": "0.0",
                    "oracle": ORACLE_VERIFY_REPAIR, "budget_units": "", "budget_window_seconds": "",
-                   "queue_order": "", "budget_oracle_method": ""}
+                   "queue_order": "", "budget_oracle_method": "", "cost_profile_id": ""}
 METRICS = (
     "queries", "verifications", "repairs", "verify_cost_total", "repair_cost_total",
     "stale_source_uses", "total_cost", "oracle_cost", "regret", "cost_vs_oracle",
@@ -129,6 +130,7 @@ def run_experiment(
     budget_window_seconds: float = 3600.0,
     queue_order: str = "predicted-savings",
     budget_oracle_method: str = EXACT,
+    cost_profile=None,
 ) -> Iterator[dict]:
     """Yield result rows; every policy replays identical saved inputs.
 
@@ -140,7 +142,14 @@ def run_experiment(
     policy; windows start at the trace start (synthetic START). For v2 traces
     with a budget, rows also carry the budget-aware oracle (Step 4) and
     budget-matched regret; ``greedy-heuristic`` rows are not lower bounds.
+
+    ``cost_profile`` (synthetic-v2 only) replays measured costs: policies see
+    the profile's mean costs as fixed estimates (replacing ``cost_pairs``),
+    every VERIFY/REPAIR is charged a keyed draw shared by all policies, and
+    both oracles use the same draws. Rows carry ``cost_profile_id``.
     """
+    if cost_profile is not None:
+        cost_pairs = [cost_profile.estimates()]
     if budget_units is not None:
         RepairBudget(budget_units, budget_window_seconds, queue_order)  # fail before replay
     for name in policies or POLICY_NAMES:
@@ -153,6 +162,8 @@ def run_experiment(
             name for name in POLICY_NAMES if evolving or name not in STALE_USE_POLICIES]
         if not evolving and STALE_USE_POLICIES & set(names):
             raise ValueError("stale-use policies need synthetic-v2 workloads (multi-episode scoring)")
+        if not evolving and cost_profile is not None:
+            raise ValueError("measured-cost replay needs synthetic-v2 workloads")
         base = evolving_run_config(workload) if evolving else synthetic_run_config(workload)
         oracles = {}
         for verify_cost, repair_cost in cost_pairs:
@@ -165,21 +176,23 @@ def run_experiment(
                     budget = None if budget_units is None else RepairBudget(
                         budget_units, budget_window_seconds, queue_order, origin=START)
                     result = Simulator(ledger, summaries, retriever, policy, config,
-                                       measure_latency=measure_latency, budget=budget).run(events)
+                                       measure_latency=measure_latency, budget=budget,
+                                       cost_profile=cost_profile).run(events)
                 finally:
                     db.close()
                 stale_use = name in STALE_USE_POLICIES
                 matched = {}
                 if evolving:
                     scores, episode_scores = score_evolving_run(
-                        workload, result, verify_cost, repair_cost, stale_penalty, allow_stale_use=stale_use)
+                        workload, result, verify_cost, repair_cost, stale_penalty, allow_stale_use=stale_use,
+                        cost_profile=cost_profile, seed=config.seed)
                     if budget_units is not None:
                         key = (verify_cost, repair_cost, stale_use)
                         if key not in oracles:
                             oracles[key] = budget_oracle(
                                 workload, verify_cost, repair_cost, budget_units, budget_window_seconds,
                                 stale_penalty=stale_penalty, allow_stale_use=stale_use,
-                                method=budget_oracle_method)
+                                method=budget_oracle_method, cost_profile=cost_profile, seed=config.seed)
                         oracle = oracles[key]
                         for group in GROUPS:
                             matched[group] = sum(oracle.per_episode[e.episode_id] for e in episode_scores
@@ -210,6 +223,7 @@ def run_experiment(
                         "budget_units": budget_units,
                         "budget_window_seconds": budget_window_seconds if budget_units is not None else None,
                         "queue_order": queue_order if budget_units is not None else None,
+                        "cost_profile_id": cost_profile.profile_id if cost_profile is not None else None,
                         "group": score.group,
                         "group_memories": score.memories,
                         **{key: (result.budget or {}).get(key) if score.group == "all" else None

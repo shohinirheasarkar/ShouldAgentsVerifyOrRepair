@@ -1,0 +1,2 @@
+# Preserve the exact archived Git patch, whose blank context lines contain a space.
+docs/step6/zaratan_24312071/source.patch whitespace=-trailing-space

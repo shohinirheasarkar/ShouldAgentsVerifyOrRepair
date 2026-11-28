@@ -44,7 +44,7 @@ def brute_force_oracle(k, verify_cost, repair_cost):
     return min(options) if k else 0.0
 
 
-@pytest.mark.parametrize("k,costs", product(range(8), [(1, 5), (2, 5), (1, 1), (0, 3), (3, 0), (0.1, 0.3)]))
+@pytest.mark.parametrize("k,costs", list(product(range(8), [(1, 5), (2, 5), (1, 1), (0, 3), (3, 0), (0.1, 0.3)])))
 def test_oracle_matches_exhaustive_search(k, costs):
     assert oracle_episode_cost(k, *costs) == pytest.approx(brute_force_oracle(k, *costs))
 
@@ -124,13 +124,20 @@ def test_latency_is_opt_in_and_changes_no_other_log_field():
     assert len(timed.query_latency_ms) == timed.queries == 14
     assert all(value >= 0 for value in timed.query_latency_ms)
     scores = {s.group: s for s in score_synthetic_run(workload, timed, 1, 5)}
+    timing_keys = {"latency_ms_instrumentation_only", "timing_ms", "query_visible"}
     for a, b in zip(plain.logs, timed.logs, strict=True):
+        assert "timing_ms" not in a and "query_visible" not in a
         if a["event_type"] == "query":
             assert b["latency_ms_instrumentation_only"] >= 0
+            assert b["query_visible"] is True and b["timing_ms"]["retrieval"] >= 0
+            if a["action"] == "VERIFY":
+                assert {"verify_source_lookup", "verify_generation", "verify_total"} <= set(b["timing_ms"])
+            if a["action"] == "REPAIR":
+                assert {"repair_generation", "repair_store_and_keyword_index", "repair_total"} <= set(b["timing_ms"])
         else:
             assert b["latency_ms_instrumentation_only"] is None
-        assert ({k: v for k, v in a.items() if k != "latency_ms_instrumentation_only"}
-                == {k: v for k, v in b.items() if k != "latency_ms_instrumentation_only"})
+        assert ({k: v for k, v in a.items() if k not in timing_keys}
+                == {k: v for k, v in b.items() if k not in timing_keys})
     assert scores["all"].latency_p95_ms is not None
     assert scores["cold"].latency_p95_ms is None  # no cold queries
     assert scores["hot"].maintenance_latency_p95_ms is not None
@@ -193,3 +200,11 @@ def test_experiment_cli_rejects_invalid_settings_before_writing(tmp_path, capsys
         main(["run-experiment", "--workload", str(workload), *extra, "--output", str(results)])
     assert error.value.code == 2 and message in capsys.readouterr().err
     assert not results.exists()
+
+
+def test_background_repairs_are_timed_and_not_query_visible():
+    workload = exact_workload()
+    timed = replay(workload, "eager-refresh", measure_latency=True)
+    background = [row for row in timed.logs if row["action"] == "REPAIR"]
+    assert background and all(row["event_type"] == "correction" for row in background)
+    assert all(row["query_visible"] is False and row["timing_ms"]["total"] >= 0 for row in background)

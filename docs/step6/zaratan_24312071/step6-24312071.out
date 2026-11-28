@@ -1,0 +1,82 @@
+Loading cuda/gcc/11.3.0/zen2/12.3.0
+  Loading requirement: gcc/11.3.0
+=== Environment ===
+code commit: cbd7c09b1c6cac4590d1db9be276159221e5adf7
+NVIDIA H100 80GB HBM3, 81559 MiB, 595.71.05
+4
+=== 1. Step 6 pilots (one model load) ===
+Python 3.11.13
+toy policy=verify-only queries=5 verifications=5 repairs=0 seconds=16
+toy policy=eager-refresh queries=5 verifications=0 repairs=6 seconds=16
+toy policy=repair-on-first-access queries=5 verifications=0 repairs=2 seconds=4
+toy policy=periodic-refresh-stale queries=5 verifications=0 repairs=0 seconds=2
+pilot policy=verify-only queries=3000 verifications=883 repairs=0 seconds=785
+pilot policy=repair-on-first-access queries=3000 verifications=0 repairs=310 seconds=1030
+pilot_quality policy=verify-only queries=1000 verifications=115 repairs=0 seconds=655
+pilot_quality policy=repair-on-first-access queries=1000 verifications=0 repairs=63 seconds=765
+{
+ "stage_seconds": {
+  "model_load": 256.7930607069284,
+  "toy": 38.72162329219282,
+  "pilot_cost": 1817.1723460587673,
+  "pilot_quality": 1421.1036083120853,
+  "dirty_bit": 336.7609352148138
+ },
+ "cost_profiles": {
+  "wall_ms": {
+   "sha256": "06f9553411394762873c8bd39c07c6b35adcec1c22f67d340a5ac5cd9f76f738",
+   "verify_samples": 998,
+   "repair_samples": 373,
+   "estimates": [
+    885.9293653017548,
+    3321.450653572095
+   ]
+  },
+  "gpu_ms": {
+   "sha256": "2f8c88aa3ad9e4e9744a822bccbc758b313b67fdd20af4967b9a1c78fce95d8c",
+   "verify_samples": 998,
+   "repair_samples": 373,
+   "estimates": [
+    884.4821659921405,
+    3319.1401864632203
+   ]
+  },
+  "total_tokens": {
+   "sha256": "2dc3f514f4d493a66e4e889d59d79c5bee8718f48e37871f0bb5899fde4471fe",
+   "verify_samples": 998,
+   "repair_samples": 373,
+   "estimates": [
+    623.9709418837675,
+    1087.4611260053618
+   ]
+  }
+ },
+ "dirty_bit": {
+  "stale_accesses": 8734,
+  "structural_flag_precision": 0.521868559651935,
+  "structural_flag_precision_ci95": [
+   0.5113852386040196,
+   0.5323326523416589
+  ],
+  "sample_size": 300,
+  "semantic_flag_precision": 0.5466666666666666,
+  "semantic_flag_precision_ci95": [
+   0.49009847469408696,
+   0.6020548479732418
+  ],
+  "fresh_answer_accuracy": 0.9866666666666667,
+  "fresh_answer_accuracy_ci95": [
+   0.9662244695197068,
+   0.9948030382967227
+  ],
+  "sample_structurally_needed": 174,
+  "stale_wrong_given_structurally_needed": 0.9425287356321839,
+  "stale_wrong_given_not_structurally_needed": 0.0,
+  "needs_review": 14,
+  "reader_failures": 0,
+  "reader_failure_examples": []
+ }
+}
+=== 2. Semantic-index profile (Step 6.3) ===
+skipped: /scratch/zt1/project/cmsc848n/user/arikger/venv-semantic not found
+=== Step 6 Zaratan pilots complete: /scratch/zt1/project/cmsc848n/user/arikger/step6-v6-20261128-001639/pilot ===

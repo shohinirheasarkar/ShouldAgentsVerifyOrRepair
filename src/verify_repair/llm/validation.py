@@ -36,6 +36,12 @@ _RETRACTION_MARKERS = (
     "not listed",
     "no information",
     "no record",
+    "does not have",
+    "has no ",
+    "unassigned",
+    "not assigned",
+    "revoked",
+    "n/a",
     "missing",
     "redacted",
     "cleared",
@@ -129,8 +135,16 @@ def validate_verify_output(
     old_facts: dict[str, FactVersion],
     current_facts: dict[str, FactVersion],
     changed_slots: tuple[str, ...],
+    *,
+    query_text: str = "",
 ) -> ValidatedVerifyOutput:
-    """Validate LLM VERIFY output against authoritative event-time facts."""
+    """Ground query-scoped evidence in current facts, without requiring a full repair.
+
+    Explicit attribute/entity mentions identify required query slots. For free-form
+    questions without literal attribute names (e.g. "Where does Alice live?"),
+    validate the cited facts instead; this is a grounding check, not a general
+    semantic question parser. Superseded-value leakage is checked across all changes.
+    """
     parsed = extract_json_object(raw_text, error_cls=LLMVerificationError)
     evidence = parsed.get("verified_evidence")
     if not isinstance(evidence, str) or not evidence.strip():
@@ -152,6 +166,26 @@ def validate_verify_output(
             f"cited_sources contains unknown or superseded refs: {unknown_refs}"
         )
 
+    cited_slots = {
+        slot for slot, fact in current_facts.items()
+        if format_source_ref(fact) in cited_clean
+    }
+    named_entities = {
+        fact.entity for fact in current_facts.values()
+        if contains_term(query_text, fact.entity)
+    }
+    queried_slots = {
+        slot for slot, fact in current_facts.items()
+        if contains_term(query_text, fact.attribute)
+        and (not named_entities or fact.entity in named_entities)
+    }
+    required_slots = queried_slots or cited_slots
+    missing_citations = sorted(required_slots - cited_slots)
+    if missing_citations:
+        raise LLMVerificationError(
+            f"cited_sources missing current refs for queried slots: {missing_citations}"
+        )
+
     retracted_raw = parsed.get("retracted_slots")
     if retracted_raw is None:
         retracted_raw = []
@@ -168,19 +202,22 @@ def validate_verify_output(
         if fact.value is not None
     } | {fact.entity.strip().lower() for fact in current_facts.values()}
 
-    for slot in changed_slots:
+    for slot in sorted(required_slots):
         cur_fact = current_facts[slot]
-        old_fact = old_facts.get(slot)
         if cur_fact.value is not None:
             if not contains_term(evidence, cur_fact.value):
                 raise LLMVerificationError(
-                    f"verified_evidence missing current value {cur_fact.value!r} for changed slot {slot!r}"
+                    f"verified_evidence missing current value {cur_fact.value!r} for queried/cited slot {slot!r}"
                 )
         else:
             if not _has_retraction_marker(evidence) and slot not in retracted_clean:
                 raise LLMVerificationError(
                     f"verified_evidence must acknowledge retraction of slot {slot!r}"
                 )
+
+    for slot in changed_slots:
+        cur_fact = current_facts[slot]
+        old_fact = old_facts.get(slot)
         if (
             old_fact is not None
             and old_fact.value is not None

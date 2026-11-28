@@ -69,6 +69,7 @@ echo "=== 1. Core offline test suite ==="
 python -m pytest -q
 
 echo "=== 2. Opt-in live 4-bit LLM integration test ==="
+export LLM_TEST_OUTPUT_DIR="${OUT_DIR}/live_test"
 RUN_LLM=1 python -m pytest -o addopts='' tests/test_llm_optional.py -v
 
 echo "=== 3. Step 5.6 canonical + full toy suite (single model load) ==="

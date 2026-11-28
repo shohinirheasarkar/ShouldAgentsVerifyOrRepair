@@ -129,28 +129,32 @@ def run_canonical(client, llm_config: LLMConfig) -> dict:
             fts_maryland = [hit.summary_id for hit in retriever.search("Maryland", 10)]
             fts_boston = [hit.summary_id for hit in retriever.search("Boston", 10)]
 
+            diag = (
+                f"policy={policy.name} profile={profile.text!r} is_stale={profile.is_stale} "
+                f"summary={summary} answers={[(s.query_id, s.predicted_answer, s.abstained, s.outdated_fact_error) for s in scores]}"
+            )
             # Enforce Step 5.6 invariants loudly.
             if policy.name == "verify-only":
-                assert result.verifications == 3 and result.repairs == 0
-                assert profile.is_stale
-                assert "Maryland" in profile.text
-                assert refs["location"] == FactVersionRef("alice_location", 1)
-                assert summary.exact_match_mean == 1.0
-                assert summary.outdated_fact_error_count == 0
+                assert result.verifications == 3 and result.repairs == 0, diag
+                assert profile.is_stale, diag
+                assert "Maryland" in profile.text, diag
+                assert refs["location"] == FactVersionRef("alice_location", 1), diag
+                assert summary.exact_match_mean == 1.0, diag
+                assert summary.outdated_fact_error_count == 0, diag
             elif policy.name in ("eager-refresh", "repair-on-first-access"):
-                assert result.verifications == 0 and result.repairs >= 1
-                assert not profile.is_stale
-                assert "Boston" in profile.text and "Maryland" not in profile.text
-                assert "Alice" in profile.text and "researcher" in profile.text
-                assert refs["location"] == FactVersionRef("alice_location", 2)
-                assert "alice_profile" in fts_boston and "alice_profile" not in fts_maryland
-                assert summary.exact_match_mean == 1.0
-                assert summary.outdated_fact_error_count == 0
+                assert result.verifications == 0 and result.repairs >= 1, diag
+                assert not profile.is_stale, diag
+                assert "Boston" in profile.text and "Maryland" not in profile.text, diag
+                assert "Alice" in profile.text and "researcher" in profile.text, diag
+                assert refs["location"] == FactVersionRef("alice_location", 2), diag
+                assert "alice_profile" in fts_boston and "alice_profile" not in fts_maryland, diag
+                assert summary.exact_match_mean == 1.0, diag
+                assert summary.outdated_fact_error_count == 0, diag
             elif policy.name == "periodic-refresh-stale":
-                assert result.verifications == 0 and result.repairs == 0
-                assert profile.is_stale and "Maryland" in profile.text
-                assert result.stale_source_uses == 3
-                assert summary.outdated_fact_error_count == 3
+                assert result.verifications == 0 and result.repairs == 0, diag
+                assert profile.is_stale and "Maryland" in profile.text, diag
+                assert result.stale_source_uses == 3, diag
+                assert summary.outdated_fact_error_count == 3, diag
 
             report_policies[policy.name] = {
                 "verifications": result.verifications,

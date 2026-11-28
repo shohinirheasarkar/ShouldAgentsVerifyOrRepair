@@ -9,6 +9,7 @@ sources, evidence refs, and token/timing usage. Also provides
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +35,9 @@ class EvidencePacket:
     evidence_mode: str
     evidence_text: str
     source_ref_labels: tuple[str, ...]
+    # Immutable identity keys of the supplied sources, never current values or
+    # staleness labels. None means the caller did not supply structured keys.
+    source_fact_keys: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +64,44 @@ def format_ref_labels(source_refs: dict[str, FactVersionRef | None]) -> tuple[st
         if ref is not None
     })
     return tuple(labels)
+
+
+def format_fact_keys(
+    source_refs: dict[str, FactVersionRef | None], ledger: FactLedger,
+) -> tuple[tuple[str, str], ...]:
+    """Identity keys from the supplied versions; no current-value resolution."""
+    keys = set()
+    for ref in source_refs.values():
+        if ref is not None:
+            fact = ledger.get_version(ref)
+            keys.add((fact.entity, fact.attribute))
+    return tuple(sorted(keys))
+
+
+def _missing_explicit_attribute(packet: EvidencePacket) -> tuple[str, str] | None:
+    """Check the controlled single-attribute question forms, without a semantic guess.
+
+    Other question forms keep the model's normal evidence-only behavior. The
+    check uses only visible question text and source identities, never expected
+    answer IDs/values, policy names, or source freshness.
+    """
+    if packet.source_fact_keys is None:
+        return None
+    question = packet.question_text.strip()
+    match = re.fullmatch(
+        r"What is (?:the current )?(?P<attribute>.+?) of (?P<entity>.+?)\?",
+        question, flags=re.IGNORECASE,
+    ) or re.fullmatch(
+        r"What is (?P<entity>.+?)[’']s (?P<attribute>.+?)\?",
+        question, flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    requested = (match['entity'].strip(), match['attribute'].strip())
+    supplied = {(entity.casefold(), attribute.casefold()) for entity, attribute in packet.source_fact_keys}
+    if tuple(part.casefold() for part in requested) not in supplied:
+        return requested
+    return None
 
 
 def format_authoritative_evidence(
@@ -146,7 +188,9 @@ class AnswerReader:
             )
             try:
                 response = self.client.generate(request)
-            except LLMTimeoutError:
+            except LLMTimeoutError as exc:
+                exc.usage = _sum_usage(usages) if usages else None  # attempts so far
+                exc.attempts = attempt
                 raise
             usages.append(response.usage)
             last_raw = response.text
@@ -157,12 +201,30 @@ class AnswerReader:
                 feedback = str(exc)
                 continue
 
+            answer_text = validated.answer_text
+            abstained = validated.abstained
+            cited_sources = validated.cited_sources
+            scope_metadata = {}
+            missing_attribute = _missing_explicit_attribute(packet)
+            if missing_attribute is not None:
+                # Retain the model call and its measured usage. Record its raw
+                # answer so the support check never hides a reader mistake.
+                scope_metadata["scope_guard"] = {
+                    "reason": "requested_attribute_not_in_supplied_sources",
+                    "entity": missing_attribute[0],
+                    "attribute": missing_attribute[1],
+                    "model_answer": answer_text,
+                    "model_abstained": abstained,
+                    "model_cited_sources": list(cited_sources),
+                }
+                answer_text, abstained, cited_sources = "INSUFFICIENT_EVIDENCE", True, ()
+
             return AnswerResult(
                 query_id=packet.query_id,
                 question_text=packet.question_text,
-                answer_text=validated.answer_text,
-                abstained=validated.abstained,
-                cited_sources=validated.cited_sources,
+                answer_text=answer_text,
+                abstained=abstained,
+                cited_sources=cited_sources,
                 evidence_refs=packet.source_ref_labels,
                 evidence_mode=packet.evidence_mode,
                 prompt_id=READER_PROMPT_ID,
@@ -177,12 +239,16 @@ class AnswerReader:
                     "attempts": attempt,
                     "finish_reason": response.finish_reason,
                     "usage": _sum_usage(usages),
+                    **scope_metadata,
                 },
             )
 
         assert last_error is not None
         snippet = last_raw[:300]
-        raise LLMValidationError(
+        error = LLMValidationError(
             f"AnswerReader failed validation after {max_attempts} attempt(s): {last_error} "
             f"(last_output={snippet!r})"
-        ) from last_error
+        )
+        error.usage = _sum_usage(usages)  # tokens and time of the failed attempts
+        error.attempts = max_attempts
+        raise error from last_error

@@ -176,6 +176,8 @@ def main(argv: list[str] | None = None) -> None:
     _add_run_arguments(synthetic, retrieval_choices=("keyword",))
     synthetic.add_argument("--workload", type=Path, required=True)
     _add_budget_arguments(synthetic)
+    synthetic.add_argument("--cost-profile", type=Path,
+                           help="measured-cost replay from a cost-profile-v1 JSON (synthetic-v2 only)")
     generate = sub.add_parser("generate-synthetic", help="create a seeded synthetic workload JSON file")
     generate.add_argument("--memories", type=int, default=100)
     generate.add_argument("--seed", type=int, default=12345)
@@ -225,6 +227,9 @@ def main(argv: list[str] | None = None) -> None:
                             help="budget-aware reference; greedy is a heuristic, not a lower bound")
     experiment.add_argument("--measure-latency", action="store_true",
                             help="record wall-clock query latency (non-deterministic)")
+    experiment.add_argument("--cost-profile", type=Path,
+                            help="measured-cost replay from a cost-profile-v1 JSON (synthetic-v2 only); "
+                                 "replaces --verify-cost/--repair-costs with the profile's estimates")
     experiment.add_argument("--output", type=Path, required=True, help="new results CSV (must not exist)")
     summarize = sub.add_parser("summarize-experiment", help="average result CSVs across seeds with 95%% CIs")
     summarize.add_argument("--input", type=Path, nargs="+", required=True)
@@ -245,6 +250,11 @@ def main(argv: list[str] | None = None) -> None:
                 make_policy(name, args.refresh_interval_events, args.repair_slots_per_tick)
             if args.stale_penalty < 0:
                 raise ValueError("--stale-penalty must be nonnegative")
+            cost_profile = None
+            if args.cost_profile is not None:
+                from verify_repair.costs import read_cost_profile
+                cost_profile = read_cost_profile(args.cost_profile)
+                cost_pairs = [cost_profile.estimates()]
             rows = write_rows(args.output, run_experiment(
                 args.workload, args.policies, cost_pairs,
                 refresh_interval_events=args.refresh_interval_events,
@@ -252,11 +262,14 @@ def main(argv: list[str] | None = None) -> None:
                 measure_latency=args.measure_latency, stale_penalty=args.stale_penalty,
                 budget_units=args.budget, budget_window_seconds=args.budget_window_seconds,
                 queue_order=args.queue_order, budget_oracle_method=args.budget_oracle,
+                cost_profile=cost_profile,
             ), RESULT_FIELDS)
         except (ValueError, OSError) as exc:
             parser.error(str(exc))
-        print(f"rows={rows} workloads={len(args.workload)} policies={len(args.policies) if args.policies else 'all'} "
-              f"repair_costs={args.repair_costs} verify_cost={args.verify_cost:g} output={args.output}")
+        costs = (f"cost_profile={cost_profile.profile_id}" if cost_profile is not None
+                 else f"repair_costs={args.repair_costs} verify_cost={args.verify_cost:g}")
+        print(f"rows={rows} workloads={len(args.workload)} "
+              f"policies={len(args.policies) if args.policies else 'all'} {costs} output={args.output}")
         return
 
     if args.command == "summarize-experiment":
@@ -379,6 +392,16 @@ def main(argv: list[str] | None = None) -> None:
             verify_cost_units=config.verify_cost_units if args.verify_cost is None else args.verify_cost,
             repair_cost_units=config.repair_cost_units if args.repair_cost is None else args.repair_cost,
         )
+        cost_profile = None
+        if getattr(args, "cost_profile", None) is not None:
+            from verify_repair.costs import read_cost_profile
+            if not evolving:
+                raise ValueError("--cost-profile needs a synthetic-v2 workload")
+            if args.verify_cost is not None or args.repair_cost is not None:
+                raise ValueError("--cost-profile replaces --verify-cost/--repair-cost")
+            cost_profile = read_cost_profile(args.cost_profile)
+            estimate_v, estimate_r = cost_profile.estimates()
+            config = replace(config, verify_cost_units=estimate_v, repair_cost_units=estimate_r)
         if llm_config is not None:
             llm_config = replace(llm_config, seed=config.seed)
         if args.command == "run-synthetic":
@@ -426,6 +449,7 @@ def main(argv: list[str] | None = None) -> None:
             answer_reader=answer_reader,
             llm_config=llm_config,
             llm_runtime_info=llm_runtime_info,
+            cost_profile=cost_profile,
         ).run(events)
 
         if args.jsonl:
