@@ -9,11 +9,12 @@ from our planning page. Post-midterm Steps 1–5 here match `docs/step2/` to
 > following step. Resolve remaining implementation choices inside the
 > relevant step.
 
-**Repo status (November 23, 2026).** Steps 1–4 are merged (Shohini). Step 5's
-code is merged (Arik): items 5.2–5.5 are implemented and tested offline with
-a fake model client. 5.1, 5.6, and Step 6 have since run on Zaratan (branch
-`step5-6-llm-costs`; see the status notes under Steps 5 and 6). The checkboxes below are the planning list's own and
-are updated as each handoff is accepted. `scripts/run_v2_eval.sh` (a
+**Repo status (November 28, 2026).** Steps 1–4 are merged (Shohini). Step 5's
+initial code is merged (Arik); the Step 5/6 fixes and v6 pilot are on
+`step5-6-llm-costs`, pending commit and merge. Arik completed the independent
+teammate review, including the 14 dirty-bit cases, on November 28. Later scale
+tasks remain separate.
+`scripts/run_v2_eval.sh` (a
 nominal-cost 10K synthetic-v2 runner) exists but has not been used for any
 reported result; reconcile its seeds with the Step 7.2 split before use in
 Step 9.
@@ -88,22 +89,25 @@ Provide a defensible hindsight reference under the same constraints as the budge
 
 Replace template-only operations in an optional mode while preserving the deterministic implementation.
 
-- [ ] **5.1** Get one report-listed local model running: 4-bit Qwen 2.5 7B or Llama 3.1 8B on the RTX 5090/Colab, with Zaratan as fallback. Save model/runtime/quantization versions, decoding settings, and a working toy command.
-- [ ] **5.2** Implement opt-in LLM VERIFY using current authoritative evidence without mutating stored summary text or provenance.
-- [ ] **5.3** Implement LLM REPAIR with validated, supported claims and exact source links; preserve unrelated correct content. Update text, provenance, retrieval indexes, and stale state with rollback/recovery.
-- [ ] **5.4** Add one fixed answer reader and prompt for every policy. Save answers and evidence references; score synthetic exact match/token F1, abstention, and outdated-fact errors against event-time truth.
-- [ ] **5.5** Test model adapters with fake responses, including unsupported claims, timeout, failed validation, and rollback. Keep core tests offline and deterministic operations available.
-- [ ] **5.6** Run the canonical Maryland→Boston case end to end under VERIFY and REPAIR, including scored answers and persisted-summary checks.
+- [x] **5.1** Get one report-listed local model running: 4-bit Qwen 2.5 7B or Llama 3.1 8B on the RTX 5090/Colab, with Zaratan as fallback. Save model/runtime/quantization versions, decoding settings, and a working toy command.
+- [x] **5.2** Implement opt-in LLM VERIFY using current authoritative evidence without mutating stored summary text or provenance.
+- [x] **5.3** Implement LLM REPAIR with validated, supported claims and exact source links; preserve unrelated correct content. Update text, provenance, retrieval indexes, and stale state with rollback/recovery.
+- [x] **5.4** Add one fixed answer reader and prompt for every policy. Save answers and evidence references; score synthetic exact match/token F1, abstention, and outdated-fact errors against event-time truth.
+- [x] **5.5** Test model adapters with fake responses, including unsupported claims, timeout, failed validation, and rollback. Keep core tests offline and deterministic operations available.
+- [x] **5.6** Run the canonical Maryland→Boston case end to end under VERIFY and REPAIR, including scored answers and persisted-summary checks.
 
 **Handoff:** Working deterministic and local-LLM modes, versioned prompts, scored toy answers, and operation regression tests. Step 6 measures this implementation.
 
-**Status (November 24, 2026), awaiting team review:**
+**Status (November 28, 2026):**
 
 - **5.1 and 5.6 ran on Zaratan** (job 24252063, H100): the live test passed,
   and the canonical check passed for all four policies (`docs/step5/README.md`).
-- **Toy reader issue.** Toy exact match is 0.60: after a retrieval miss the v4
-  reader answers a different attribute. This needs a team decision on the
-  reader prompt.
+- **Toy reader issue.** V4 answered Alice's office question with her location
+  after a retrieval miss. The prompt-only v5 fix regressed stale answering
+  (job 24299576). V6 restores the v4 prompt and uses a source-identity
+  support check; the focused live check passed according to the Zaratan run
+  report. The archived v6 manifest reports 0.60 toy exact match for the three
+  current-evidence policies, with no false abstentions; the retrieval miss remains.
 - **LLM fallback.** Opt-in `llm_fallback` (deterministic VERIFY/REPAIR, reader
   abstains) keeps long pilots running after a validation failure. It is logged
   per row.
@@ -114,28 +118,55 @@ Replace template-only operations in an optional mode while preserving the determ
 
 Obtain the measured cost profiles and semantic-staleness evidence needed for the final study.
 
-- [ ] **6.1** Instrument VERIFY, REPAIR, retrieval, source lookup, generation, embeddings/index updates, and answer generation. Record tokens and GPU/compute time with explicit units; separate background work from query-visible latency.
-- [ ] **6.2** Run toy then 1K pilots. Save cost distributions, p50/p95/p99, warm/cold behavior, hardware/concurrency, answer quality, repair fidelity, failures, and representative examples.
-- [ ] **6.3** Profile full semantic-index rebuilds separately from generation cost. If they prevent fair runs, implement a scoped incremental/cache update with stable IDs and rollback recovery; retain the committed-summary rebuild fallback.
-- [ ] **6.4** Implement measured-cost replay at 10K/100K using saved profiles and reproducible keyed cost samples shared across policies. Define the estimates policies can see; preserve existing fixed-cost P1/P2 behavior and keep future realized costs hidden.
-- [ ] **6.5** Implement evaluator-only semantic dirty-bit checks on sampled toy/1K queries by comparing stale-memory and freshly rebuilt-memory answers against current truth. Report flag precision, sample size, uncertainty, and human-reviewed disagreements.
-- [ ] **6.6** Save cost profiles and exact replay commands. If 1K LLM runs are infeasible, use the midterm's toy-measurement fallback and record the resulting limitation; replayed costs must remain labeled as replay.
+- [x] **6.1** Instrument VERIFY, REPAIR, retrieval, source lookup, generation, embeddings/index updates, and answer generation. Record tokens and GPU/compute time with explicit units; separate background work from query-visible latency.
+- [x] **6.2** Run toy then 1K pilots. Save cost distributions, p50/p95/p99, warm/cold behavior, hardware/concurrency, answer quality, repair fidelity, failures, and representative examples.
+- [x] **6.3** Profile full semantic-index rebuilds separately from generation cost. If they prevent fair runs, implement a scoped incremental/cache update with stable IDs and rollback recovery; retain the committed-summary rebuild fallback.
+- [x] **6.4** Implement measured-cost replay at 10K/100K using saved profiles and reproducible keyed cost samples shared across policies. Define the estimates policies can see; preserve existing fixed-cost P1/P2 behavior and keep future realized costs hidden.
+- [x] **6.5** Implement evaluator-only semantic dirty-bit checks on sampled toy/1K queries by comparing stale-memory and freshly rebuilt-memory answers against current truth. Report flag precision, sample size, uncertainty, and documented disagreement cases. Independent teammate confirmation is recorded below.
+- [x] **6.6** Save cost profiles and exact replay commands. If 1K LLM runs are infeasible, use the midterm's toy-measurement fallback and record the resulting limitation; replayed costs must remain labeled as replay.
 
 **Handoff:** Measured cost-profile files, a deterministic cost-replay mode, 1K pilot outputs, and dirty-bit results. Step 7 uses these costs when evaluating learned decisions.
 
-**Status (November 24, 2026):** 6.1–6.6 are implemented and run, awaiting
-team review. Results and commands are in `docs/step6/README.md`; the pilot is
-Zaratan job 24252220.
+**Status (November 28, 2026):** The v6 rerun completed on an H100 (job
+24312071; scratch `step6-v6-20261128-001639/pilot`). All four toy runs, two
+3,000-query cost runs, two 1,000-query quality runs, and three profile builds
+completed. The local full core suite passed (860 passed, 2 deselected) and a
+focused live reader check was reported as passed. Arik completed the
+independent teammate review, including the 14-case dirty-bit audit.
 
-- **Open issue.** 51% of LLM VERIFY calls fail validation, because the v4
-  prompt asks for query-scoped evidence while the validator requires every
-  changed slot. This inflates the measured VERIFY cost: the repair/verify
-  ratio is 1.9 as measured, about 3.8 for successful calls. Fix it, then
-  rerun the pilot before Step 9 relies on these costs.
-- **6.3.** No incremental index is needed for keyword-only experiments.
-- **6.4.** Replay was checked at 100 memories and 10K; 100K is left to Step 9.
-- **6.5.** The 14 disagreements are explained in
-  `docs/step6/dirty_bit_review.md` and still need a teammate's confirmation.
+- **Corrected VERIFY cost.** Query-scoped validation reduced cost-run VERIFY
+  fallbacks from 451/883 (51.1%, v4) to 11/883 (1.25%, v6). V6 pooled wall-time
+  estimates are 886 ms/VERIFY and 3,321 ms/REPAIR (ratio 3.75); the v4 profiles
+  remain historical. Eleven VERIFY fallbacks show residual schema errors, so
+  the new profile includes retries and fallbacks.
+- **6.2.** The transferred v6 manifest reports 0.972 exact match for
+  Verify-Only and 0.969 for Repair-on-First-Access on 1,000 queries each;
+  both have zero outdated-fact errors. REPAIR used deterministic fallback in
+  9/310 cost calls and 1/63 quality calls after validation failures. Toy
+  exact match is 0.60 for the three current-evidence policies, now with zero
+  false abstentions and zero outdated-fact errors. Validation enforces
+  claim/source fidelity; an independent semantic audit of REPAIR prose was
+  not part of this pilot.
+- **6.3.** The earlier semantic-index profile found no incremental index
+  needed for keyword-only experiments. The v6 semantic profile skipped because
+  `venv-semantic` was absent; no new semantic timing was measured.
+- **6.4.** Measured-cost replay and keyed draws are implemented and covered
+  by offline tests. The v6 wall-time profile was replayed at 100 memories;
+  a 10K development replay is recorded in `docs/step6/README.md`. The full
+  100K scale evaluation remains Step 11.
+- **6.5.** The v6 sample reproduces the same 14 flagged query IDs documented
+  in `docs/step6/dirty_bit_review.md`: ten changed-back values and four
+  false abstentions on “delta.” Arik checked and accepted the event-time audit
+  of all 14 cases on November 28; none is unresolved. The four reader errors
+  remain in the reported accuracy.
+- **6.6.** The v6 manifest, three verified profile files, dirty-bit sample,
+  job log, base commit, and exact source patch are archived in
+  `docs/step6/zaratan_24312071/`. Replay commands are in
+  `docs/step6/README.md`.
+
+- [x] **Independent teammate review:** Arik Gershman reviewed the Step 5/6
+  changes and saved v6 evidence, confirmed all 14 dirty-bit cases, and signed
+  `docs/step6/dirty_bit_review.md` on November 28 (job 24312071).
 
 **Code / reference:** `src/verify_repair/retrieval/semantic.py`; `src/verify_repair/experiments.py`; `docs/midterm/midterm_report.tex`.
 

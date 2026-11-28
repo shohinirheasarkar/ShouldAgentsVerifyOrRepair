@@ -49,6 +49,7 @@ class StaleAccess:
     expected_value: str | None
     outdated_values: tuple[str, ...]
     structurally_needed: bool
+    source_fact_keys: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,7 @@ class DirtyBitJudgment:
 
     def to_row(self) -> dict:
         row = asdict(self.access)
+        row.pop("source_fact_keys")  # internal identity metadata; preserve the CSV columns
         for key in ("stale_refs", "fresh_refs", "outdated_values"):
             row[key] = ";".join(row[key])
         row.update(stale_answer=self.stale_answer, stale_abstained=self.stale_abstained,
@@ -96,7 +98,7 @@ def wilson_interval(successes: int, total: int, z: float = 1.959964) -> tuple[fl
 
 def collect_stale_accesses(workload: EvolvingWorkload) -> list[StaleAccess]:
     """Replay under Verify-Only and describe every stale access (deterministic)."""
-    from verify_repair.llm.reader import format_ref_labels, render_reader_question
+    from verify_repair.llm.reader import format_fact_keys, format_ref_labels, render_reader_question
 
     db, ledger, summaries, retriever, events = load_evolving(workload)
     try:
@@ -128,6 +130,7 @@ def collect_stale_accesses(workload: EvolvingWorkload) -> list[StaleAccess]:
                 outdated_values=truth.outdated_values,
                 structurally_needed=any(
                     ledger.resolve_current_ref(ref, event.timestamp) != ref for ref in queried),
+                source_fact_keys=format_fact_keys(refs, ledger),
             ))
         return accesses
     finally:
@@ -160,7 +163,8 @@ def judge_sample(accesses: list[StaleAccess], reader, sample_size: int, seed: in
                                      ("fresh_summary", access.fresh_text, access.fresh_refs)):
                 answers[mode] = reader.answer(EvidencePacket(
                     query_id=access.query_id, question_text=access.question, summary_ids=(access.summary_id,),
-                    evidence_mode=mode, evidence_text=text, source_ref_labels=refs))
+                    evidence_mode=mode, evidence_text=text, source_ref_labels=refs,
+                    source_fact_keys=access.source_fact_keys))
         except LLMError as exc:
             if failures is None:
                 raise

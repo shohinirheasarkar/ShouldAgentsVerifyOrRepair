@@ -342,6 +342,16 @@ via `python scripts/run_canonical_llm.py --mode fake`. See
 (`scripts/prefetch_llm_model.py`) and Slurm batch submission
 (`scripts/zaratan_step5.sbatch`).
 
+The current bundle is `llm-prompts-v6` (`reader-v6`; VERIFY/REPAIR prompts
+remain v4). VERIFY validates the queried attribute rather than requiring
+every changed fact. The reader uses the successful v4 model-facing prompt
+plus a deterministic support check for explicit single-attribute questions,
+using supplied source identities. The v5 prompt-only fix regressed live stale
+answering (job 24299576). The focused v6 live check was reported as passed,
+and the v6 Step 6 pilot completed in Zaratan job 24312071. See
+`docs/step6/README.md` for the corrected cost profile and independent review
+item. Saved v4 costs and scores remain historical measurements.
+
 ## Measured costs, cost replay, and dirty bits (Step 6)
 
 See [`docs/step6/README.md`](docs/step6/README.md). In short:
@@ -362,8 +372,9 @@ See [`docs/step6/README.md`](docs/step6/README.md). In short:
 
 ```bash
 python scripts/run_step6_pilot.py --mode deterministic --output-dir /tmp/step6-det
-python -m verify_repair.cli run-experiment --workload data/synthetic_v2/stable-100-seed1.json \
-  --cost-profile docs/step6/cost_profile_wall_ms.json --stale-penalty 2000 --output /tmp/measured.csv
+PYTHONPATH=src python -m verify_repair.cli run-experiment --workload data/synthetic_v2/stable-100-seed1.json \
+  --cost-profile docs/step6/zaratan_24312071/cost_profile_wall_ms.json \
+  --stale-penalty 2000 --output /tmp/measured.csv
 ```
 
 ## Tutorial notebooks

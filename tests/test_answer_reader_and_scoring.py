@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 from verify_repair.answer_scoring import (
     exact_match,
@@ -15,7 +18,7 @@ from verify_repair.answer_scoring import (
 from verify_repair.db import connect
 from verify_repair.llm.client import FakeLLMClient, LLMRequest
 from verify_repair.llm.operations import LLMSummaryBuilder, LLMVerifier
-from verify_repair.llm.reader import AnswerReader, render_reader_question
+from verify_repair.llm.reader import AnswerReader, EvidencePacket, format_fact_keys, render_reader_question
 from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.summaries import SummaryStore
 from verify_repair.models import ChangeType, FactVersionRef
@@ -132,6 +135,122 @@ def test_exact_match_and_token_f1_normalization():
     assert token_f1("Room Z", "Room Z") == 1.0
     assert 0.0 < token_f1("Room A", "Room Z") < 1.0
     assert token_f1("Maryland", "Boston") == 0.0
+
+
+def test_reader_scope_guard_rejects_wrong_attribute_without_hiding_model_cost_or_answer():
+    for question in ("What is the current office of Alice?", "What is Alice's office?"):
+        client = FakeLLMClient([json.dumps({
+            "answer": "Boston", "abstained": False, "cited_sources": ["alice_location@v2"],
+        })])
+        packet = EvidencePacket(
+            "q", question, ("alice_profile",), "fresh_summary",
+            "Alice is a researcher living in Boston.", ("alice_location@v2",),
+            source_fact_keys=(("Alice", "name"), ("Alice", "job"), ("Alice", "location")),
+        )
+        answer = AnswerReader(client).answer(packet)
+        assert answer.abstained and answer.answer_text == "INSUFFICIENT_EVIDENCE"
+        assert answer.cited_sources == ()
+        assert answer.llm_metadata["scope_guard"]["model_answer"] == "Boston"
+        assert answer.llm_metadata["scope_guard"]["model_cited_sources"] == ["alice_location@v2"]
+        assert answer.llm_metadata["usage"]["total_tokens"] > 0
+        assert len(client.requests) == 1
+
+
+def test_reader_scope_guard_preserves_stated_location_even_when_packet_is_stale():
+    packet = EvidencePacket(
+        "q", "What is the current location of Alice?", ("alice_profile",), "fresh_summary",
+        "Alice is a researcher living in Maryland.", ("alice_location@v1",),
+        source_fact_keys=(("Alice", "location"),),
+    )
+    prompts = set()
+    for mode in ("fresh_summary", "stale_summary", "verified_evidence", "repaired_summary"):
+        client = FakeLLMClient([json.dumps({
+            "answer": "Maryland", "abstained": False, "cited_sources": ["alice_location@v1"],
+        })])
+        answer = AnswerReader(client).answer(replace(packet, evidence_mode=mode))
+        assert answer.answer_text == "Maryland" and not answer.abstained
+        assert "scope_guard" not in answer.llm_metadata
+        prompts.add((client.requests[0].system_prompt, client.requests[0].user_prompt))
+    assert len(prompts) == 1  # neither source freshness nor policy enters the prompt
+
+
+def test_reader_scope_guard_accepts_office_evidence_and_checks_entity():
+    for entity, expected_abstention in (("Alice", False), ("Bob", True)):
+        client = FakeLLMClient([json.dumps({
+            "answer": "Room A", "abstained": False, "cited_sources": ["office@v1"],
+        })])
+        answer = AnswerReader(client).answer(EvidencePacket(
+            "q", "What is the current office of Alice?", ("office_summary",), "summary",
+            f"{entity} works in Room A.", ("office@v1",), source_fact_keys=((entity, "office"),),
+        ))
+        assert answer.abstained is expected_abstention
+        assert answer.answer_text == ("INSUFFICIENT_EVIDENCE" if expected_abstention else "Room A")
+
+
+def test_simulator_supplies_source_identities_and_blocks_the_observed_wrong_office_answer():
+    def wrong_office_handler(request):
+        if request.role == "reader" and "office of Alice" in request.user_prompt:
+            return json.dumps({
+                "answer": "Boston", "abstained": False, "cited_sources": ["alice_location@v2"],
+            })
+        return _smart_toy_handler(request)
+
+    db, ledger, store, retriever, events = load_toy(DATA)
+    try:
+        client = FakeLLMClient(handler=wrong_office_handler)
+        result = Simulator(
+            ledger, store, retriever, VerifyOnly(), RunConfig(), verifier=LLMVerifier(client),
+            answer_reader=AnswerReader(client),
+        ).run(events)
+        office_answers = [a for a in result.answers if a["query_id"] in ("q4", "q5")]
+        assert len(office_answers) == 2
+        assert all(a["abstained"] and a["answer_text"] == "INSUFFICIENT_EVIDENCE" for a in office_answers)
+        office_rows = [r for r in result.logs if r.get("query_id") in ("q4", "q5")]
+        assert all(r["reader_llm_metadata"]["scope_guard"]["model_answer"] == "Boston" for r in office_rows)
+        assert format_fact_keys(store.get_source_facts("alice_profile"), ledger) == (
+            ("Alice", "job"), ("Alice", "location"), ("Alice", "name"),
+        )
+    finally:
+        db.close()
+
+
+def test_live_preflight_runs_offline_with_recorded_wrong_attribute_response(tmp_path, monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("live_preflight", Path(__file__).with_name("test_llm_optional.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def handler(request):
+        if request.role == "reader" and ("office of Alice" in request.user_prompt or "Alice's office" in request.user_prompt):
+            return json.dumps({"answer": "Boston", "abstained": False, "cited_sources": ["alice_location@v2"]})
+        return _smart_toy_handler(request)
+
+    monkeypatch.setattr(module, "HuggingFace4BitClient", lambda cfg: FakeLLMClient(handler=handler, config=cfg))
+    monkeypatch.setenv("LLM_TEST_OUTPUT_DIR", str(tmp_path))
+    module.test_live_local_llm_canonical_maryland_to_boston(tmp_path)
+    report = json.loads((tmp_path / "canonical.json").read_text())
+    assert report["policies"]["periodic-refresh-stale"]["answer_summary"]["outdated_fact_error_count"] == 3
+    trace = [json.loads(line) for line in (tmp_path / "requests_responses.jsonl").read_text().splitlines()]
+    assert json.loads(trace[0]["response"]["text"])["answer"] == "Boston"  # raw mistake preserved
+    assert "What is the current location of Alice?" in trace[3]["request"]["user_prompt"]
+    assert "Maryland" in trace[3]["request"]["user_prompt"]
+
+
+def test_live_preflight_keeps_evidence_when_model_abstains_on_stated_location(tmp_path, monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("failing_live_preflight", Path(__file__).with_name("test_llm_optional.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    response = json.dumps({"answer": "INSUFFICIENT_EVIDENCE", "abstained": True, "cited_sources": []})
+    monkeypatch.setattr(module, "HuggingFace4BitClient", lambda cfg: FakeLLMClient(handler=lambda req: response, config=cfg))
+    monkeypatch.setenv("LLM_TEST_OUTPUT_DIR", str(tmp_path))
+    with pytest.raises(AssertionError, match="current location of Alice"):
+        module.test_live_local_llm_canonical_maryland_to_boston(tmp_path)
+    trace = [json.loads(line) for line in (tmp_path / "requests_responses.jsonl").read_text().splitlines()]
+    assert json.loads(trace[-1]["response"]["text"])["abstained"]
+    assert (tmp_path / "runtime.json").exists()
 
 
 def test_event_time_truth_and_outdated_values_across_retraction_and_expiry():

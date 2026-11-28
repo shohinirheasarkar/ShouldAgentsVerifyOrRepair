@@ -19,7 +19,7 @@ from verify_repair.maintenance.operations import MaintenanceService
 from verify_repair.memory.ledger import FactLedger
 from verify_repair.memory.staleness import mark_stale_from_fact_change
 from verify_repair.memory.summaries import SummaryStore
-from verify_repair.models import ChangeType, LLMError, stamp
+from verify_repair.models import ChangeType, FactVersionRef, LLMError, stamp
 from verify_repair.policies.base import (
     MaintenanceAction, MaintenanceCandidate, MaintenancePolicy, StaleAccessContext,
 )
@@ -585,7 +585,7 @@ class Simulator:
                 query_actions: list[str] = []
                 query_evidence_blocks: list[str] = []
                 query_evidence_modes: list[str] = []
-                query_source_refs: dict[str, object] = {}
+                query_source_refs: dict[str, FactVersionRef | None] = {}
                 query_used_stale = False
                 query_required_current = False
 
@@ -751,7 +751,7 @@ class Simulator:
                             query_source_refs[f"{hit.summary_id}:{slot}"] = ref
 
                 if self.answer_reader is not None:
-                    from verify_repair.llm.reader import EvidencePacket, format_ref_labels
+                    from verify_repair.llm.reader import EvidencePacket, format_fact_keys, format_ref_labels
 
                     if not hits:
                         packet_mode = "no_retrieval"
@@ -773,6 +773,7 @@ class Simulator:
                         evidence_mode=packet_mode,
                         evidence_text=packet_text,
                         source_ref_labels=ref_labels,
+                        source_fact_keys=format_fact_keys(query_source_refs, self.ledger),
                     )
                     reader_started = time.perf_counter()
                     try:

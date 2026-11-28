@@ -97,6 +97,56 @@ def test_llm_verify_does_not_mutate_summary_or_provenance():
         db.close()
 
 
+@pytest.mark.parametrize(
+    "question,evidence,citations",
+    [
+        ("What is Alice's location?", "Alice lives in Boston.", ["alice_location@v2"]),
+        ("Where does Alice live?", "Alice lives in Boston.", ["alice_location@v2"]),
+        ("What is Alice's job?", "Alice is a professor.", ["alice_job@v2"]),
+    ],
+)
+def test_query_local_verify_succeeds_without_retry_or_persistent_repair(question, evidence, citations):
+    db, ledger, store = _setup_alice()
+    try:
+        ledger.append_correction("alice_job", "professor", T1, "alice_job_change")
+        mark_stale_from_fact_change(store, "alice_job", "alice_job_change", T1)
+        before_refs = store.get_source_facts("alice_profile")
+        before_history = {fid: ledger.get_history(fid) for fid in ("alice_location", "alice_job")}
+        client = FakeLLMClient([json.dumps({
+            "verified_evidence": evidence, "cited_sources": citations, "retracted_slots": [],
+        })])
+        service = MaintenanceService(ledger, store, verifier=LLMVerifier(client))
+        result = service.verify("alice_profile", T1, query_text=question)
+
+        assert result.verified_context == evidence
+        assert result.llm_metadata["attempts"] == 1
+        assert len(client.requests) == 1
+        summary = store.get_summary("alice_profile")
+        assert summary.text == "Alice is a researcher living in Maryland."
+        assert summary.is_stale and summary.queries_this_episode == 1
+        assert store.get_source_facts("alice_profile") == before_refs
+        assert db.execute("SELECT text FROM summary_fts WHERE summary_id='alice_profile'").fetchone()[0] == summary.text
+        assert {fid: ledger.get_history(fid) for fid in before_history} == before_history
+    finally:
+        db.close()
+
+
+def test_verifier_passes_question_to_validator_and_retries_unrelated_only_evidence():
+    db, ledger, store = _setup_alice()
+    try:
+        client = FakeLLMClient([
+            json.dumps({"verified_evidence": "Alice is a researcher.", "cited_sources": ["alice_job@v1"]}),
+            json.dumps({"verified_evidence": "Alice lives in Boston.", "cited_sources": ["alice_location@v2"]}),
+        ])
+        service = MaintenanceService(ledger, store, verifier=LLMVerifier(client))
+        result = service.verify("alice_profile", T1, query_text="What is Alice's location?")
+        assert result.llm_metadata["attempts"] == 2
+        assert "missing current refs for queried slots" in client.requests[1].user_prompt
+        assert store.get_summary("alice_profile").queries_this_episode == 1
+    finally:
+        db.close()
+
+
 def test_llm_verify_timeout_and_validation_failure_roll_back_counters():
     db, ledger, store = _setup_alice()
     try:

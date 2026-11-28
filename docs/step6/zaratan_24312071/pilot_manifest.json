@@ -1,0 +1,1351 @@
+{
+  "cost_profiles": {
+    "gpu_ms": {
+      "estimates": [
+        884.4821659921405,
+        3319.1401864632203
+      ],
+      "repair_samples": 373,
+      "sha256": "2f8c88aa3ad9e4e9744a822bccbc758b313b67fdd20af4967b9a1c78fce95d8c",
+      "verify_samples": 998
+    },
+    "total_tokens": {
+      "estimates": [
+        623.9709418837675,
+        1087.4611260053618
+      ],
+      "repair_samples": 373,
+      "sha256": "2dc3f514f4d493a66e4e889d59d79c5bee8718f48e37871f0bb5899fde4471fe",
+      "verify_samples": 998
+    },
+    "wall_ms": {
+      "estimates": [
+        885.9293653017548,
+        3321.450653572095
+      ],
+      "repair_samples": 373,
+      "sha256": "06f9553411394762873c8bd39c07c6b35adcec1c22f67d340a5ac5cd9f76f738",
+      "verify_samples": 998
+    }
+  },
+  "dirty_bit": {
+    "fresh_answer_accuracy": 0.9866666666666667,
+    "fresh_answer_accuracy_ci95": [
+      0.9662244695197068,
+      0.9948030382967227
+    ],
+    "needs_review": 14,
+    "reader_failure_examples": [],
+    "reader_failures": 0,
+    "sample_size": 300,
+    "sample_structurally_needed": 174,
+    "semantic_flag_precision": 0.5466666666666666,
+    "semantic_flag_precision_ci95": [
+      0.49009847469408696,
+      0.6020548479732418
+    ],
+    "stale_accesses": 8734,
+    "stale_wrong_given_not_structurally_needed": 0.0,
+    "stale_wrong_given_structurally_needed": 0.9425287356321839,
+    "structural_flag_precision": 0.521868559651935,
+    "structural_flag_precision_ci95": [
+      0.5113852386040196,
+      0.5323326523416589
+    ]
+  },
+  "llm_config": {
+    "backend": "hf-4bit",
+    "compute_dtype": "auto",
+    "do_sample": false,
+    "max_retries": 2,
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "prompt_bundle_sha256": "281994eeec1ca52c94ff68c7df0abe95ed8499c206e590fbe4c4ee6a6ca694a3",
+    "prompt_version": "llm-prompts-v6",
+    "quantization": "nf4",
+    "reader_max_new_tokens": 128,
+    "repair_max_new_tokens": 512,
+    "seed": 12345,
+    "temperature": null,
+    "timeout_seconds": 60.0,
+    "top_p": null,
+    "verify_max_new_tokens": 256
+  },
+  "mode": "llm",
+  "pilot": {
+    "repair-on-first-access": {
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 14148.041057400405,
+            "mean": 343.1597085994047,
+            "min": 0.10527297854423523,
+            "n": 3000,
+            "p50": 0.1980219967663288,
+            "p95": 3484.1566518880427,
+            "p99": 5126.884824130684
+          },
+          "reader": null,
+          "with_maintenance": {
+            "max": 14148.041057400405,
+            "mean": 3319.2277063705747,
+            "min": 1020.4136739484966,
+            "n": 310,
+            "p50": 3466.210967861116,
+            "p95": 5640.385840088129,
+            "p99": 10771.489053964615
+          },
+          "without_maintenance": {
+            "max": 0.3568539395928383,
+            "mean": 0.19276461834053346,
+            "min": 0.10527297854423523,
+            "n": 2690,
+            "p50": 0.19157025963068008,
+            "p95": 0.2625938504934311,
+            "p99": 0.3018239513039589
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "repair": {
+          "count": 310,
+          "fallback_examples": [
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}')",
+              "event_id": "query_000000655",
+              "summary_id": "memory_000133"
+            },
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000207 record: attr01 harbor; attr02 fjord; attr03 garnet; attr04 fjord; attr05 amber.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000207_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"fjord\", \"source_ref\": \"memory_000207_attr02@v1\"}, {\"sl')",
+              "event_id": "query_000001193",
+              "summary_id": "memory_000207"
+            },
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr02' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000997 record: attr01 cedar; attr03 garnet; attr04 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"attr01 of Entity000997 is cedar.\", \"source_ref\": \"memory_000997_attr01@v1\"}, {\"slot\": \"attr02\", \"statement\": \"attr02 of Entity000997 is unavailable.\", \"source_ref\": \"memor')",
+              "event_id": "query_000001587",
+              "summary_id": "memory_000997"
+            },
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr02' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000647 record: delta; fjord; fjord; birch.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"Entity000647\\'s attr01 is delta.\", \"source_ref\": \"memory_000647_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"Entity000647\\'s attr02 is retracted/unavailable.\", \"source_ref\": \"memory_000647')",
+              "event_id": "query_000001715",
+              "summary_id": "memory_000647"
+            },
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000040 record: attr01 birch; attr02 amber; attr03 garnet; attr04 delta; attr05 delta; attr06 cedar.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"attr01 is [RETRACTED]\", \"source_ref\": \"memory_000040_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"attr02 is amber\", \"source_ref\":')",
+              "event_id": "query_000002178",
+              "summary_id": "memory_000040"
+            }
+          ],
+          "fallbacks": 9,
+          "first_call_ms": 14147.674416191876,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 849,
+              "mean": 208.79677419354837,
+              "min": 66,
+              "n": 310,
+              "p50": 223,
+              "p95": 341,
+              "p99": 669
+            },
+            "gpu_ms": {
+              "max": 14144.587890625,
+              "mean": 3316.657508111769,
+              "min": 1018.4969482421875,
+              "n": 310,
+              "p50": 3463.694580078125,
+              "p95": 5636.666259765625,
+              "p99": 10764.692626953125
+            },
+            "prompt_tokens": {
+              "max": 3395,
+              "mean": 878.4806451612903,
+              "min": 522,
+              "n": 310,
+              "p50": 862,
+              "p95": 1629,
+              "p99": 2756
+            },
+            "total_tokens": {
+              "max": 4244,
+              "mean": 1087.2774193548387,
+              "min": 594,
+              "n": 310,
+              "p50": 1085,
+              "p95": 1946,
+              "p99": 3425
+            },
+            "wall_ms": {
+              "max": 14144.649762194604,
+              "mean": 3316.7015128573703,
+              "min": 1018.5304312035441,
+              "n": 310,
+              "p50": 3463.731270749122,
+              "p95": 5636.740646325052,
+              "p99": 10764.833522029221
+            }
+          },
+          "retried_operations": 17,
+          "timing_ms": {
+            "repair_generation": {
+              "max": 14146.779817994684,
+              "mean": 3318.3789163572533,
+              "min": 1019.7044583037496,
+              "n": 310,
+              "p50": 3465.2602239511907,
+              "p95": 5639.638108201325,
+              "p99": 10770.378575660288
+            },
+            "repair_semantic_index": {
+              "max": 0.0004279427230358124,
+              "mean": 0.00020377037505949698,
+              "min": 0.00013923272490501404,
+              "n": 310,
+              "p50": 0.0001969747245311737,
+              "p95": 0.00026496127247810364,
+              "p99": 0.0003366731107234955
+            },
+            "repair_source_lookup": {
+              "max": 0.245572067797184,
+              "mean": 0.13978773607842385,
+              "min": 0.06478186696767807,
+              "n": 310,
+              "p50": 0.14274567365646362,
+              "p95": 0.21167518571019173,
+              "p99": 0.2249102108180523
+            },
+            "repair_store_and_keyword_index": {
+              "max": 1.043626107275486,
+              "mean": 0.42721335325510273,
+              "min": 0.31419936567544937,
+              "n": 310,
+              "p50": 0.4133349284529686,
+              "p95": 0.5672699771821499,
+              "p99": 0.6263279356062412
+            },
+            "repair_total": {
+              "max": 14147.674416191876,
+              "mean": 3318.9564856295024,
+              "min": 1020.1822221279144,
+              "n": 310,
+              "p50": 3465.922966133803,
+              "p95": 5640.159894712269,
+              "p99": 10771.158314775676
+            }
+          },
+          "warm_median_ms": 3465.922966133803
+        }
+      },
+      "queries": 3000,
+      "repairs": 310,
+      "seconds": 1029.7922809468582,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "verify-only": {
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 3121.990212239325,
+            "mean": 261.6579882636045,
+            "min": 0.1298738643527031,
+            "n": 3000,
+            "p50": 0.23263925686478615,
+            "p95": 860.1401653140783,
+            "p99": 1786.1014329828322
+          },
+          "reader": null,
+          "with_maintenance": {
+            "max": 3121.990212239325,
+            "mean": 888.4798131312538,
+            "min": 663.5239007882774,
+            "n": 883,
+            "p50": 820.6572998315096,
+            "p95": 1047.2965347580612,
+            "p99": 3051.9092050381005
+          },
+          "without_maintenance": {
+            "max": 0.38813427090644836,
+            "mean": 0.2108123740748831,
+            "min": 0.1298738643527031,
+            "n": 2117,
+            "p50": 0.20739901810884476,
+            "p95": 0.29353005811572075,
+            "p99": 0.32740412279963493
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "verify": {
+          "count": 883,
+          "fallback_examples": [
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000000357",
+              "summary_id": "memory_000911"
+            },
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000000592",
+              "summary_id": "memory_000911"
+            },
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000733_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000733 is garnet.\", \"cited_sources\": [\"memory_000733_attr02@v2\"], \"retracted_slots\": [\"memory_000733_attr02@v1\"]}')",
+              "event_id": "query_000001292",
+              "summary_id": "memory_000733"
+            },
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000001296",
+              "summary_id": "memory_000911"
+            },
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000001691",
+              "summary_id": "memory_000911"
+            }
+          ],
+          "fallbacks": 11,
+          "first_call_ms": 839.5340759307146,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 198,
+              "mean": 56.12797281993205,
+              "min": 42,
+              "n": 883,
+              "p50": 52,
+              "p95": 60,
+              "p99": 198
+            },
+            "gpu_ms": {
+              "max": 3118.1378784179688,
+              "mean": 886.7345710313739,
+              "min": 661.734375,
+              "n": 883,
+              "p50": 819.0615234375,
+              "p95": 1045.3594970703125,
+              "p99": 3048.2876586914062
+            },
+            "prompt_tokens": {
+              "max": 1934,
+              "mean": 566.7066817667044,
+              "min": 365,
+              "n": 883,
+              "p50": 558,
+              "p95": 701,
+              "p99": 1467
+            },
+            "total_tokens": {
+              "max": 2109,
+              "mean": 622.8346545866365,
+              "min": 416,
+              "n": 883,
+              "p50": 610,
+              "p95": 752,
+              "p99": 1665
+            },
+            "wall_ms": {
+              "max": 3118.2371666654944,
+              "mean": 886.7733821020771,
+              "min": 661.7759331129491,
+              "n": 883,
+              "p50": 819.0958900377154,
+              "p95": 1045.3952909447253,
+              "p99": 3048.4038018621504
+            }
+          },
+          "retried_operations": 32,
+          "timing_ms": {
+            "verify_generation": {
+              "max": 3121.6097408905625,
+              "mean": 888.0037404665363,
+              "min": 662.994191981852,
+              "n": 883,
+              "p50": 820.1607191003859,
+              "p95": 1046.691737137735,
+              "p99": 3051.534582860768
+            },
+            "verify_source_lookup": {
+              "max": 0.24313898757100105,
+              "mean": 0.14485679735616272,
+              "min": 0.0558667816221714,
+              "n": 883,
+              "p50": 0.15395088121294975,
+              "p95": 0.22566504776477814,
+              "p99": 0.23624487221240997
+            },
+            "verify_total": {
+              "max": 3121.7342261224985,
+              "mean": 888.1783843950694,
+              "min": 663.2154081016779,
+              "n": 883,
+              "p50": 820.3489887528121,
+              "p95": 1046.9367327168584,
+              "p99": 3051.654619630426
+            }
+          },
+          "warm_median_ms": 820.3213328961283
+        }
+      },
+      "queries": 3000,
+      "repairs": 0,
+      "seconds": 785.2262862059288,
+      "stale_source_uses": 0,
+      "verifications": 883
+    }
+  },
+  "pilot_quality": {
+    "repair-on-first-access": {
+      "answers": {
+        "abstention_accuracy": 1.0,
+        "abstention_count": 34,
+        "abstention_rate": 0.034,
+        "answerable_exact_match_mean": 0.9688442211055276,
+        "answerable_queries": 995,
+        "answerable_token_f1_mean": 0.9688442211055276,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.969,
+        "false_abstention_count": 29,
+        "false_abstention_rate": 0.02914572864321608,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.969,
+        "total_completion_tokens": 49071,
+        "total_prompt_tokens": 401472,
+        "total_queries": 1000,
+        "unanswerable_queries": 5
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 7065.3814459219575,
+            "mean": 764.8952287938446,
+            "min": 402.42152102291584,
+            "n": 1000,
+            "p50": 560.9131990931928,
+            "p95": 2507.5425188988447,
+            "p99": 5021.317027974874
+          },
+          "reader": {
+            "max": 762.2718838974833,
+            "mean": 554.5194191569462,
+            "min": 402.17942697927356,
+            "n": 1000,
+            "p50": 559.9297932349145,
+            "p95": 578.0664719641209,
+            "p99": 580.1651971414685
+          },
+          "with_maintenance": {
+            "max": 7065.3814459219575,
+            "mean": 3881.3607183004183,
+            "min": 1476.0153559036553,
+            "n": 63,
+            "p50": 4140.4806124046445,
+            "p95": 5707.840110175312,
+            "p99": 7065.3814459219575
+          },
+          "without_maintenance": {
+            "max": 762.6531883142889,
+            "mean": 555.3569941738722,
+            "min": 402.42152102291584,
+            "n": 937,
+            "p50": 560.2978612296283,
+            "p95": 578.4317879006267,
+            "p99": 580.2165889181197
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "repair": {
+          "count": 63,
+          "fallback_examples": [
+            {
+              "error": "LLMValidationError: LLM REPAIR failed validation after 3 attempt(s): summary_text must explicitly mark retracted slot 'attr01' as retracted/unavailable (last_output='{\"summary_text\": \"Entity000133 record: attr02 garnet.\", \"claims\": [{\"slot\": \"attr01\", \"statement\": \"[RETRACTED]\", \"source_ref\": \"memory_000133_attr01@v2\"}, {\"slot\": \"attr02\", \"statement\": \"garnet\", \"source_ref\": \"memory_000133_attr02@v1\"}]}')",
+              "event_id": "query_000000655",
+              "summary_id": "memory_000133"
+            }
+          ],
+          "fallbacks": 1,
+          "first_call_ms": 4276.898524258286,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 417,
+              "mean": 214.28571428571428,
+              "min": 68,
+              "n": 63,
+              "p50": 229,
+              "p95": 333,
+              "p99": 417
+            },
+            "gpu_ms": {
+              "max": 6486.70849609375,
+              "mean": 3331.356540256076,
+              "min": 1058.3668212890625,
+              "n": 63,
+              "p50": 3573.914306640625,
+              "p95": 5162.4375,
+              "p99": 6486.70849609375
+            },
+            "prompt_tokens": {
+              "max": 2087,
+              "mean": 874.0793650793651,
+              "min": 535,
+              "n": 63,
+              "p50": 869,
+              "p95": 1096,
+              "p99": 2087
+            },
+            "total_tokens": {
+              "max": 2386,
+              "mean": 1088.3650793650793,
+              "min": 605,
+              "n": 63,
+              "p50": 1097,
+              "p95": 1429,
+              "p99": 2386
+            },
+            "wall_ms": {
+              "max": 6486.78218992427,
+              "mean": 3331.3992529412703,
+              "min": 1058.403352741152,
+              "n": 63,
+              "p50": 3573.951539117843,
+              "p95": 5162.49132482335,
+              "p99": 6486.78218992427
+            }
+          },
+          "retried_operations": 2,
+          "timing_ms": {
+            "repair_generation": {
+              "max": 6489.872930105776,
+              "mean": 3333.086075815594,
+              "min": 1059.749448671937,
+              "n": 63,
+              "p50": 3575.6175159476697,
+              "p95": 5164.651534054428,
+              "p99": 6489.872930105776
+            },
+            "repair_semantic_index": {
+              "max": 0.00047963112592697144,
+              "mean": 0.00024465696206168525,
+              "min": 0.00016111880540847778,
+              "n": 63,
+              "p50": 0.00022631138563156128,
+              "p95": 0.0003608874976634979,
+              "p99": 0.00047963112592697144
+            },
+            "repair_source_lookup": {
+              "max": 0.2586883492767811,
+              "mean": 0.17252398122634208,
+              "min": 0.08319318294525146,
+              "n": 63,
+              "p50": 0.1774379052221775,
+              "p95": 0.2375338226556778,
+              "p99": 0.2586883492767811
+            },
+            "repair_store_and_keyword_index": {
+              "max": 0.6255479529500008,
+              "mean": 0.453700784534689,
+              "min": 0.3226189874112606,
+              "n": 63,
+              "p50": 0.43907295912504196,
+              "p95": 0.580374151468277,
+              "p99": 0.6255479529500008
+            },
+            "repair_total": {
+              "max": 6490.462765097618,
+              "mean": 3333.723543448344,
+              "min": 1060.2459688670933,
+              "n": 63,
+              "p50": 3576.2069108895957,
+              "p95": 5165.488814935088,
+              "p99": 6490.462765097618
+            }
+          },
+          "warm_median_ms": 3566.1847088485956
+        }
+      },
+      "queries": 1000,
+      "repairs": 63,
+      "seconds": 765.0302758594044,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "verify-only": {
+      "answers": {
+        "abstention_accuracy": 1.0,
+        "abstention_count": 32,
+        "abstention_rate": 0.032,
+        "answerable_exact_match_mean": 0.9718592964824121,
+        "answerable_queries": 995,
+        "answerable_token_f1_mean": 0.9718592964824121,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.972,
+        "false_abstention_count": 27,
+        "false_abstention_rate": 0.027135678391959798,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.972,
+        "total_completion_tokens": 41959,
+        "total_prompt_tokens": 411295,
+        "total_queries": 1000,
+        "unanswerable_queries": 5
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 3698.886013124138,
+            "mean": 654.3365058610216,
+            "min": 400.94429394230247,
+            "n": 1000,
+            "p50": 558.9433619752526,
+            "p95": 1382.5227543711662,
+            "p99": 1420.9723407402635
+          },
+          "reader": {
+            "max": 1368.0183286778629,
+            "mean": 554.0802686712705,
+            "min": 400.6961560808122,
+            "n": 1000,
+            "p50": 556.8997641094029,
+            "p95": 577.6816881261766,
+            "p99": 610.1740999147296
+          },
+          "with_maintenance": {
+            "max": 3698.886013124138,
+            "mean": 1423.9233789884527,
+            "min": 1251.3896813616157,
+            "n": 115,
+            "p50": 1378.8181939162314,
+            "p95": 1450.0973629765213,
+            "p99": 3626.986755989492
+          },
+          "without_maintenance": {
+            "max": 1368.424243759364,
+            "mean": 554.333691838813,
+            "min": 400.94429394230247,
+            "n": 885,
+            "p50": 556.9800371304154,
+            "p95": 577.2315752692521,
+            "p99": 610.5601750314236
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "verify": {
+          "count": 115,
+          "fallback_examples": [
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000000357",
+              "summary_id": "memory_000911"
+            },
+            {
+              "error": "LLMVerificationError: LLM VERIFY failed validation after 3 attempt(s): retracted_slots contains unknown slots: ['memory_000911_attr02@v1'] (last_output='{\"verified_evidence\": \"The current attr02 of Entity000911 is garnet.\", \"cited_sources\": [\"memory_000911_attr02@v2\"], \"retracted_slots\": [\"memory_000911_attr02@v1\"]}')",
+              "event_id": "query_000000592",
+              "summary_id": "memory_000911"
+            }
+          ],
+          "fallbacks": 2,
+          "first_call_ms": 797.8593399748206,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 198,
+              "mean": 55.36521739130435,
+              "min": 51,
+              "n": 115,
+              "p50": 52,
+              "p95": 55,
+              "p99": 198
+            },
+            "gpu_ms": {
+              "max": 3083.8865356445312,
+              "mean": 867.1876125169837,
+              "min": 780.8739624023438,
+              "n": 115,
+              "p50": 811.80908203125,
+              "p95": 869.2657470703125,
+              "p99": 3055.185302734375
+            },
+            "prompt_tokens": {
+              "max": 1467,
+              "mean": 577.3304347826087,
+              "min": 404,
+              "n": 115,
+              "p50": 560,
+              "p95": 664,
+              "p99": 1467
+            },
+            "total_tokens": {
+              "max": 1665,
+              "mean": 632.695652173913,
+              "min": 458,
+              "n": 115,
+              "p50": 614,
+              "p95": 716,
+              "p99": 1665
+            },
+            "wall_ms": {
+              "max": 3083.9874572120607,
+              "mean": 867.2257361893097,
+              "min": 780.908745713532,
+              "n": 115,
+              "p50": 811.8436387740076,
+              "p95": 869.307559914887,
+              "p99": 3055.2899078466
+            }
+          },
+          "retried_operations": 3,
+          "timing_ms": {
+            "verify_generation": {
+              "max": 3087.149159051478,
+              "mean": 868.4539163282708,
+              "min": 782.0253656245768,
+              "n": 115,
+              "p50": 813.0218219012022,
+              "p95": 870.7479173317552,
+              "p99": 3058.4896071814
+            },
+            "verify_source_lookup": {
+              "max": 0.2624616026878357,
+              "mean": 0.1753903034588565,
+              "min": 0.07420917972922325,
+              "n": 115,
+              "p50": 0.17789285629987717,
+              "p95": 0.24299416691064835,
+              "p99": 0.25772303342819214
+            },
+            "verify_total": {
+              "max": 3087.2902013361454,
+              "mean": 868.6608100026522,
+              "min": 782.1713010780513,
+              "n": 115,
+              "p50": 813.2114969193935,
+              "p95": 871.0125009529293,
+              "p99": 3058.629750739783
+            }
+          },
+          "warm_median_ms": 813.465129584074
+        }
+      },
+      "queries": 1000,
+      "repairs": 0,
+      "seconds": 654.818889175076,
+      "stale_source_uses": 0,
+      "verifications": 115
+    }
+  },
+  "pilot_workload": {
+    "config": {
+      "burst_minutes": 10.0,
+      "change_mix": [
+        0.6,
+        0.2,
+        0.1,
+        0.1
+      ],
+      "changes_per_memory": 3.0,
+      "cold_queries": [
+        0,
+        2
+      ],
+      "demand_mode": "stable",
+      "exception_hours": 1.0,
+      "facts_per_summary": [
+        1,
+        6
+      ],
+      "fan_out": 1,
+      "group_counts": [
+        334,
+        333,
+        333
+      ],
+      "horizon_hours": 24.0,
+      "hot_queries": [
+        11,
+        50
+      ],
+      "num_memories": 1000,
+      "num_phases": 2,
+      "seed": 2001,
+      "shared_fact_rate": 0.0,
+      "warm_queries": [
+        3,
+        10
+      ]
+    },
+    "dataset_id": "synthetic-v2-0733b02f37ae43c6",
+    "sha256": "adc9358cecbe8e3a1b0e89441915e8a1ed0592fbc93744c46ed7e2f247672784"
+  },
+  "runtime_info": {
+    "accelerate_version": "1.16.0",
+    "backend": "hf-4bit",
+    "bitsandbytes_version": "0.50.2",
+    "compute_dtype": "bfloat16",
+    "cuda_available": true,
+    "cuda_version": "13.2",
+    "do_sample": false,
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "gpu_vram_gb": 79.18,
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "model_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "offline": true,
+    "platform": "Linux-4.18.0-553.125.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "prompt_bundle_sha256": "281994eeec1ca52c94ff68c7df0abe95ed8499c206e590fbe4c4ee6a6ca694a3",
+    "prompt_version": "llm-prompts-v6",
+    "python_version": "3.11.13",
+    "quantization": "nf4",
+    "temperature": null,
+    "top_p": null,
+    "torch_version": "2.15.0+cu132",
+    "transformers_version": "5.24.0"
+  },
+  "settings": {
+    "cost_queries": 3000,
+    "dirty_sample": 300,
+    "llm_dtype": "auto",
+    "llm_max_retries": 2,
+    "llm_model": "Qwen/Qwen2.5-7B-Instruct",
+    "llm_quantization": "nf4",
+    "llm_revision": "a09a35458c702b33eeacc393d103063234e8bc28",
+    "llm_timeout": 60.0,
+    "mode": "llm",
+    "output_dir": "/scratch/zt1/project/cmsc848n/user/arikger/step6-v6-20261128-001639/pilot",
+    "pilot_memories": 1000,
+    "pilot_seed": 2001,
+    "quality_queries": 1000,
+    "skip_toy": false
+  },
+  "stage_seconds": {
+    "dirty_bit": 336.7609352148138,
+    "model_load": 256.7930607069284,
+    "pilot_cost": 1817.1723460587673,
+    "pilot_quality": 1421.1036083120853,
+    "toy": 38.72162329219282
+  },
+  "toy": {
+    "eager-refresh": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 2,
+        "abstention_rate": 0.4,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 555,
+        "total_prompt_tokens": 5050,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": {
+          "max": 4669.297928921878,
+          "mean": 2268.5793632796654,
+          "min": 669.1730530001223,
+          "n": 6,
+          "p50": 1576.245579868555,
+          "p95": 4669.297928921878,
+          "p99": 4669.297928921878
+        },
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 475.06136959418654,
+            "mean": 425.983409024775,
+            "min": 403.52174919098616,
+            "n": 5,
+            "p50": 404.960704036057,
+            "p95": 475.06136959418654,
+            "p99": 475.06136959418654
+          },
+          "reader": {
+            "max": 474.58392940461636,
+            "mean": 425.6523059681058,
+            "min": 403.1680189073086,
+            "n": 5,
+            "p50": 404.744079336524,
+            "p95": 474.58392940461636,
+            "p99": 474.58392940461636
+          },
+          "with_maintenance": null,
+          "without_maintenance": {
+            "max": 475.06136959418654,
+            "mean": 425.983409024775,
+            "min": 403.52174919098616,
+            "n": 5,
+            "p50": 404.960704036057,
+            "p95": 475.06136959418654,
+            "p99": 475.06136959418654
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "repair": {
+          "count": 6,
+          "fallback_examples": [],
+          "fallbacks": 0,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 101,
+              "mean": 70.83333333333333,
+              "min": 43,
+              "n": 6,
+              "p50": 43,
+              "p95": 101,
+              "p99": 101
+            },
+            "gpu_ms": {
+              "max": 4666.85791015625,
+              "mean": 2266.410390218099,
+              "min": 667.777099609375,
+              "n": 6,
+              "p50": 1574.0977783203125,
+              "p95": 4666.85791015625,
+              "p99": 4666.85791015625
+            },
+            "prompt_tokens": {
+              "max": 1025,
+              "mean": 607.5,
+              "min": 472,
+              "n": 6,
+              "p50": 475,
+              "p95": 1025,
+              "p99": 1025
+            },
+            "total_tokens": {
+              "max": 1126,
+              "mean": 678.3333333333334,
+              "min": 515,
+              "n": 6,
+              "p50": 518,
+              "p95": 1126,
+              "p99": 1126
+            },
+            "wall_ms": {
+              "max": 4666.912604123354,
+              "mean": 2266.4614566601813,
+              "min": 667.8163860924542,
+              "n": 6,
+              "p50": 1574.1438139230013,
+              "p95": 4666.912604123354,
+              "p99": 4666.912604123354
+            }
+          },
+          "retried_operations": 1,
+          "timing_ms": {}
+        }
+      },
+      "queries": 5,
+      "repairs": 6,
+      "seconds": 15.814957208000124,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "periodic-refresh-stale": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 2,
+        "abstention_rate": 0.4,
+        "answerable_exact_match_mean": 0.0,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.0,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.0,
+        "false_abstention_count": 0,
+        "false_abstention_rate": null,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 3,
+        "outdated_fact_error_rate": 0.6,
+        "stale_source_use_count": 5,
+        "stale_source_use_rate": 1.0,
+        "token_f1_mean": 0.0,
+        "total_completion_tokens": 135,
+        "total_prompt_tokens": 1397,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 455.8879411779344,
+            "mean": 427.80960872769356,
+            "min": 418.3958200737834,
+            "n": 5,
+            "p50": 421.628353651613,
+            "p95": 455.8879411779344,
+            "p99": 455.8879411779344
+          },
+          "reader": {
+            "max": 455.5239458568394,
+            "mean": 427.52635395154357,
+            "min": 418.1901039555669,
+            "n": 5,
+            "p50": 421.4279940351844,
+            "p95": 455.5239458568394,
+            "p99": 455.5239458568394
+          },
+          "with_maintenance": null,
+          "without_maintenance": {
+            "max": 455.8879411779344,
+            "mean": 427.80960872769356,
+            "min": 418.3958200737834,
+            "n": 5,
+            "p50": 421.628353651613,
+            "p95": 455.8879411779344,
+            "p99": 455.8879411779344
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0
+      },
+      "queries": 5,
+      "repairs": 0,
+      "seconds": 2.144718933850527,
+      "stale_source_uses": 5,
+      "verifications": 0
+    },
+    "repair-on-first-access": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 2,
+        "abstention_rate": 0.4,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 271,
+        "total_prompt_tokens": 2467,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 1942.9474649950862,
+            "mean": 867.9774168878794,
+            "min": 408.85639982298017,
+            "n": 5,
+            "p50": 409.3050519004464,
+            "p95": 1942.9474649950862,
+            "p99": 1942.9474649950862
+          },
+          "reader": {
+            "max": 491.23526317998767,
+            "mean": 424.9494817107916,
+            "min": 407.624214887619,
+            "n": 5,
+            "p50": 408.5743222385645,
+            "p95": 491.23526317998767,
+            "p99": 491.23526317998767
+          },
+          "with_maintenance": {
+            "max": 1942.9474649950862,
+            "mean": 1556.4012120012194,
+            "min": 1169.8549590073526,
+            "n": 2,
+            "p50": 1169.8549590073526,
+            "p95": 1942.9474649950862,
+            "p99": 1942.9474649950862
+          },
+          "without_maintenance": {
+            "max": 409.3050519004464,
+            "mean": 409.0282201456527,
+            "min": 408.85639982298017,
+            "n": 3,
+            "p50": 408.9232087135315,
+            "p95": 409.3050519004464,
+            "p99": 409.3050519004464
+          }
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "repair": {
+          "count": 2,
+          "fallback_examples": [],
+          "fallbacks": 0,
+          "first_call_ms": 1534.8564377054572,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 98,
+              "mean": 70.5,
+              "min": 43,
+              "n": 2,
+              "p50": 43,
+              "p95": 98,
+              "p99": 98
+            },
+            "gpu_ms": {
+              "max": 1532.7872314453125,
+              "mean": 1104.604248046875,
+              "min": 676.4212646484375,
+              "n": 2,
+              "p50": 676.4212646484375,
+              "p95": 1532.7872314453125,
+              "p99": 1532.7872314453125
+            },
+            "prompt_tokens": {
+              "max": 598,
+              "mean": 535,
+              "min": 472,
+              "n": 2,
+              "p50": 472,
+              "p95": 598,
+              "p99": 598
+            },
+            "total_tokens": {
+              "max": 696,
+              "mean": 605.5,
+              "min": 515,
+              "n": 2,
+              "p50": 515,
+              "p95": 696,
+              "p99": 696
+            },
+            "wall_ms": {
+              "max": 1532.8336926177144,
+              "mean": 1104.6517642680556,
+              "min": 676.4698359183967,
+              "n": 2,
+              "p50": 676.4698359183967,
+              "p95": 1532.8336926177144,
+              "p99": 1532.8336926177144
+            }
+          },
+          "retried_operations": 0,
+          "timing_ms": {
+            "repair_generation": {
+              "max": 1534.3448021449149,
+              "mean": 1106.1599866952747,
+              "min": 677.9751712456346,
+              "n": 2,
+              "p50": 677.9751712456346,
+              "p95": 1534.3448021449149,
+              "p99": 1534.3448021449149
+            },
+            "repair_semantic_index": {
+              "max": 0.00023096799850463867,
+              "mean": 0.00021094456315040588,
+              "min": 0.0001909211277961731,
+              "n": 2,
+              "p50": 0.0001909211277961731,
+              "p95": 0.00023096799850463867,
+              "p99": 0.00023096799850463867
+            },
+            "repair_source_lookup": {
+              "max": 0.16405200585722923,
+              "mean": 0.12328638695180416,
+              "min": 0.08252076804637909,
+              "n": 2,
+              "p50": 0.08252076804637909,
+              "p95": 0.16405200585722923,
+              "p99": 0.16405200585722923
+            },
+            "repair_store_and_keyword_index": {
+              "max": 0.3386307507753372,
+              "mean": 0.27244281955063343,
+              "min": 0.20625488832592964,
+              "n": 2,
+              "p50": 0.20625488832592964,
+              "p95": 0.3386307507753372,
+              "p99": 0.3386307507753372
+            },
+            "repair_total": {
+              "max": 1534.8564377054572,
+              "mean": 1106.5671872347593,
+              "min": 678.2779367640615,
+              "n": 2,
+              "p50": 678.2779367640615,
+              "p95": 1534.8564377054572,
+              "p99": 1534.8564377054572
+            }
+          },
+          "warm_median_ms": 678.2779367640615
+        }
+      },
+      "queries": 5,
+      "repairs": 2,
+      "seconds": 4.363909765146673,
+      "stale_source_uses": 0,
+      "verifications": 0
+    },
+    "verify-only": {
+      "answers": {
+        "abstention_accuracy": null,
+        "abstention_count": 2,
+        "abstention_rate": 0.4,
+        "answerable_exact_match_mean": 0.6,
+        "answerable_queries": 5,
+        "answerable_token_f1_mean": 0.6,
+        "citation_present_rate": 1.0,
+        "exact_match_mean": 0.6,
+        "false_abstention_count": 0,
+        "false_abstention_rate": 0.0,
+        "missed_abstention_count": 0,
+        "outdated_fact_error_count": 0,
+        "outdated_fact_error_rate": 0.0,
+        "stale_source_use_count": 0,
+        "stale_source_use_rate": 0.0,
+        "token_f1_mean": 0.6,
+        "total_completion_tokens": 300,
+        "total_prompt_tokens": 3275,
+        "total_queries": 5,
+        "unanswerable_queries": 0
+      },
+      "operations": {
+        "background_repair_ms": null,
+        "query_visible_latency_ms": {
+          "all": {
+            "max": 10719.32251797989,
+            "mean": 3200.980414636433,
+            "min": 928.1210801564157,
+            "n": 5,
+            "p50": 936.1674492247403,
+            "p95": 10719.32251797989,
+            "p99": 10719.32251797989
+          },
+          "reader": {
+            "max": 1239.3516902811825,
+            "mean": 657.4201997369528,
+            "min": 403.5430671647191,
+            "n": 5,
+            "p50": 405.91139532625675,
+            "p95": 1239.3516902811825,
+            "p99": 1239.3516902811825
+          },
+          "with_maintenance": {
+            "max": 10719.32251797989,
+            "mean": 3200.980414636433,
+            "min": 928.1210801564157,
+            "n": 5,
+            "p50": 936.1674492247403,
+            "p95": 10719.32251797989,
+            "p99": 10719.32251797989
+          },
+          "without_maintenance": null
+        },
+        "reader_fallback_examples": [],
+        "reader_fallbacks": 0,
+        "verify": {
+          "count": 5,
+          "fallback_examples": [],
+          "fallbacks": 0,
+          "first_call_ms": 9479.385424870998,
+          "llm_usage": {
+            "completion_tokens": {
+              "max": 34,
+              "mean": 34,
+              "min": 34,
+              "n": 5,
+              "p50": 34,
+              "p95": 34,
+              "p99": 34
+            },
+            "gpu_ms": {
+              "max": 9467.5947265625,
+              "mean": 2539.74248046875,
+              "min": 523.1749877929688,
+              "n": 5,
+              "p50": 528.5997924804688,
+              "p95": 9467.5947265625,
+              "p99": 9467.5947265625
+            },
+            "prompt_tokens": {
+              "max": 397,
+              "mean": 375.8,
+              "min": 344,
+              "n": 5,
+              "p50": 397,
+              "p95": 397,
+              "p99": 397
+            },
+            "total_tokens": {
+              "max": 431,
+              "mean": 409.8,
+              "min": 378,
+              "n": 5,
+              "p50": 431,
+              "p95": 431,
+              "p99": 431
+            },
+            "wall_ms": {
+              "max": 9467.728483956307,
+              "mean": 2539.800850301981,
+              "min": 523.2106149196625,
+              "n": 5,
+              "p50": 528.6412709392607,
+              "p95": 9467.728483956307,
+              "p99": 9467.728483956307
+            }
+          },
+          "retried_operations": 0,
+          "timing_ms": {
+            "verify_generation": {
+              "max": 9479.129131883383,
+              "mean": 2542.9674323648214,
+              "min": 524.1869371384382,
+              "n": 5,
+              "p50": 529.6844318509102,
+              "p95": 9479.129131883383,
+              "p99": 9479.129131883383
+            },
+            "verify_source_lookup": {
+              "max": 0.16991980373859406,
+              "mean": 0.12332610785961151,
+              "min": 0.06778677925467491,
+              "n": 5,
+              "p50": 0.14388607814908028,
+              "p95": 0.16991980373859406,
+              "p99": 0.16991980373859406
+            },
+            "verify_total": {
+              "max": 9479.385424870998,
+              "mean": 2543.1343539617956,
+              "min": 524.2902250029147,
+              "n": 5,
+              "p50": 529.8588848672807,
+              "p95": 9479.385424870998,
+              "p99": 9479.385424870998
+            }
+          },
+          "warm_median_ms": 528.7373249884695
+        }
+      },
+      "queries": 5,
+      "repairs": 0,
+      "seconds": 16.027161332778633,
+      "stale_source_uses": 0,
+      "verifications": 5
+    }
+  }
+}

@@ -6,10 +6,89 @@ scale without calling the model, and measures how often a stale flag is a
 false alarm. Everything is opt-in: without `--cost-profile` or latency
 measurement, runs, logs, and hashes are unchanged.
 
-## Results (Zaratan, November 24, 2026)
+## Corrected v6 pilot (Zaratan, November 28, 2026)
+
+Job 24312071 completed with `llm-prompts-v6` on one H100 80 GB, Python
+3.11.13, the pinned Qwen2.5-7B-Instruct model, NF4 4-bit, and pilot seed
+2001. The scratch output is
+`/scratch/zt1/project/cmsc848n/user/arikger/step6-v6-20261128-001639/pilot`.
+The archived log and manifest show four toy runs, two 3,000-query cost
+runs, two 1,000-query quality runs, and all three profiles completed without
+a failed stage. The focused v6 live reader check was separately reported as
+passed. These are development measurements from one seed.
+
+| v6 metric | VERIFY | REPAIR |
+| --- | ---: | ---: |
+| Cost-run calls | 883 | 310 |
+| Pooled profile samples (cost + quality) | 998 | 373 |
+| Pooled wall-time mean | 885.9 ms | 3,321.5 ms |
+| Pooled GPU-time mean | 884.5 ms | 3,319.1 ms |
+| Pooled total-token mean | 624.0 | 1,087.5 |
+
+The wall-time repair/verify ratio is 3.75. Cost-run VERIFY had 11 fallbacks
+(1.25%) and 32 retried operations (3.62%), compared with 451 fallbacks
+(51.1%) in v4. Its operation-time p50/p95/p99 were 820/1,047/3,052 ms;
+the high tail includes retries. The first five fallback examples put an old
+source ref in `retracted_slots` where a slot name was required. Those examples
+do not establish the cause of every fallback; REPAIR counts are below.
+
+The new profile files are archived in [`zaratan_24312071/`](zaratan_24312071/)
+along with the manifest, dirty-bit sample, job log, base commit, and source
+patch. Their SHA-256
+hashes are: wall-ms `06f9553411394762873c8bd39c07c6b35adcec1c22f67d340a5ac5cd9f76f738`,
+GPU-ms `2f8c88aa3ad9e4e9744a822bccbc758b313b67fdd20af4967b9a1c78fce95d8c`,
+and total-tokens `2dc3f514f4d493a66e4e889d59d79c5bee8718f48e37871f0bb5899fde4471fe`.
+The profile at `docs/step6/cost_profile_wall_ms.json` remains **v4**; use
+[`zaratan_24312071/cost_profile_wall_ms.json`](zaratan_24312071/cost_profile_wall_ms.json)
+for new measured-cost comparisons. Both profiles have the same `profile_id`
+(`llm-wall_ms-pilot2001`), so identify them by SHA-256 and prompt version.
+
+The transferred manifest resolves the answer-quality and fallback counts:
+
+| v6 run | Exact match | False abstentions | Outdated-fact errors | Reader fallbacks |
+| --- | ---: | ---: | ---: | ---: |
+| Toy Verify-Only | 0.600 (5 queries) | 0 | 0 | 0 |
+| Toy Eager Refresh | 0.600 (5 queries) | 0 | 0 | 0 |
+| Toy Repair-on-First-Access | 0.600 (5 queries) | 0 | 0 | 0 |
+| Toy Periodic-Refresh-Stale | 0.000 (5 queries) | 0 | 3 | 0 |
+| Quality Verify-Only | 0.972 (1,000 queries) | 27 | 0 | 0 |
+| Quality Repair-on-First-Access | 0.969 (1,000 queries) | 29 | 0 | 0 |
+
+Cost-run REPAIR had 9 fallbacks and 17 retried operations among 310 calls;
+quality-run REPAIR had 1 fallback and 2 retried operations among 63 calls.
+Fallbacks use the deterministic builder after failed validation. Its
+claim/source checks enforce supported content, but the saved manifest does
+not constitute an independent human audit of REPAIR text. The toy reader
+now abstains on unsupported office evidence; the retrieval miss remains, so
+exact match stays 0.60.
+
+The archived v6 wall-time profile also passed deterministic cost replay:
+128 rows across all eight policies and four saved 100-memory traces, 20 rows
+for five policies under a shared budget on the stable trace, and 16 rows for
+four policies on a generated 10K stable development trace. All rows had
+nonnegative regret. The 10K workload hash is
+`f0f0d485a58f01c14ed4c7f1a82985b7ea036eb08ffc5409e92c816feef23e9c`.
+These are development checks, not held-out comparisons; the 100K scale
+experiment remains Step 11. Exact commands and validation totals are in
+[`zaratan_24312071/replay_validation.md`](zaratan_24312071/replay_validation.md).
+
+The v6 dirty-bit stage reported 8,734 stale accesses and 300 sampled cases:
+structural precision 0.522, semantic precision 0.547, fresh-answer accuracy
+0.987 (296/300), 14 flagged for review, and no reader fallbacks. Independent
+teammate reviewer Arik Gershman reviewed and accepted all 14 query-time cases in
+[`dirty_bit_review.md`](dirty_bit_review.md) on November 28 (job 24312071):
+ten changed-back values and four false abstentions on “delta,” with no
+unresolved cases. The four abstentions remain accuracy errors. Arik also
+completed the independent review of the Step 5/6 changes and saved v6 evidence.
+The optional
+semantic-index profile skipped because `venv-semantic` was absent; the earlier
+H100 semantic-index timings remain the relevant Step 6.3 measurements.
+
+## Historical v4 results (Zaratan, November 24, 2026)
 
 These are development pilots on a single pilot seed (2001). They measure
-what the current pipeline costs; they are not research findings.
+what the archived v4 pipeline costs; they are not research findings or costs
+of the current corrected implementation.
 
 - **Pilots and dirty bits:** job 24252220, code `6dc4bdf`, 1h21m
   ([`zaratan_24252220/`](zaratan_24252220/)).
@@ -47,7 +126,7 @@ Where the time goes:
 - **Reader.** The fixed reader adds about 0.57 s per query (quality runs).
 - **Model load.** Loading the model takes 250 s per process.
 
-**Known issue: most LLM VERIFY calls fail validation.** 436 of the 451
+**Historical v4 issue: most LLM VERIFY calls fail validation.** 436 of the 451
 fallbacks fail the same check: `verified_evidence missing current value … for
 changed slot …`. The v4 VERIFY prompt asks for "concise, query-scoped"
 evidence, so the model describes only the asked attribute. The validator
@@ -71,13 +150,19 @@ What this means for the measured costs:
   2.9× what a fixed prompt/validator pair would likely cost. The measured
   repair/verify ratio is 1.9; with successful calls only it would be about 3.8.
 
-Prompt and validator are Step 5's contract (`llm-prompts-v4`). Two fixes are
-possible:
+**Fix applied November 27, 2026:** validation now requires the queried slots,
+including their exact current citations, values, and retraction handling,
+rather than every changed slot. Explicit entity/attribute mentions determine
+query scope; for paraphrased questions without literal attributes, the cited
+facts are checked. Superseded-value leakage remains checked across all changes.
+VERIFY stays non-mutating. The prompt-only reader-v5 fix regressed live
+stale answering in job 24299576. Reader-v6 restores the successful v4 prompt
+and adds a deterministic source-identity support check for explicit attribute
+questions (see `docs/step5/README.md`). The v6 run above completed.
 
-- ask for every changed slot's current value in the prompt (a v5 prompt); or
-- check only the queried slot in the validator.
-
-Either fix needs a team decision and a new pilot.
+Offline regressions and the focused live check cover the fixes; the v6 pilot
+above produced new wall-time, GPU-time, and token profiles. Keep the saved v4
+profiles and replay results as historical development artifacts.
 
 **Other failure modes:**
 
@@ -163,12 +248,13 @@ sample has 300.
   - it did not change: 0.000 (0 of 126).
 
 The sample is identical, answer for answer, in both jobs (the reader is
-deterministic). Fourteen cases need human review; each is explained in
+deterministic). The 14 cases received owner sign-off; each is explained in
 [`dirty_bit_review.md`](dirty_bit_review.md):
 
 - 10 where the asked fact changed and then changed back to its old value, so
   the stale answer is right;
-- 4 where the reader abstained on the value "delta" from both summaries.
+- 4 where the reader abstained on "delta" in the fresh summary, despite its
+  being explicitly stated (the stale answers were different, outdated values).
 
 Structural precision therefore matches semantic precision closely on this
 workload; the remaining gap is the changed-back values.
@@ -288,9 +374,9 @@ Replay (`--cost-profile PATH`, synthetic-v2 only):
   LLM-in-the-loop measurements.
 
 ```bash
-python -m verify_repair.cli run-experiment \
+PYTHONPATH=src python -m verify_repair.cli run-experiment \
   --workload data/synthetic_v2/{stable,bursty,shifting,fanout}-100-seed1.json \
-  --cost-profile docs/step6/cost_profile_wall_ms.json --stale-penalty 2000 \
+  --cost-profile docs/step6/zaratan_24312071/cost_profile_wall_ms.json --stale-penalty 2000 \
   --output measured.csv
 ```
 
@@ -320,3 +406,19 @@ python scripts/run_step6_pilot.py --mode deterministic --output-dir /tmp/step6-d
 # Zaratan (after the Step 5 setup in docs/step5/README.md)
 sbatch scripts/zaratan_step6.sbatch
 ```
+
+After the focused v6 reader check passes, use the same cached model revision and pilot
+settings, saving to a new scratch directory (the output directory must be
+empty). This includes toy, cost, quality, and the 300-case dirty-bit sample:
+
+```bash
+OUT_DIR="/scratch/zt1/project/cmsc848n/user/$USER/step6-v6-$(date +%Y%m%d-%H%M%S)" \
+LLM_REVISION=a09a35458c702b33eeacc393d103063234e8bc28 \
+COST_QUERIES=3000 QUALITY_QUERIES=1000 DIRTY_SAMPLE=300 \
+sbatch scripts/zaratan_step6.sbatch
+```
+
+Run the Step 5 live test first (`docs/step5/README.md`). Check the new
+manifest's prompt version/hash, validation retry/fallback rates, answer
+quality, and reviewed dirty-bit disagreements before replacing any profile
+used for comparisons.

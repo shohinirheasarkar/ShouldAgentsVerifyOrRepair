@@ -138,6 +138,117 @@ def test_validate_verify_output_accepts_current_and_rejects_stale_or_fabricated(
         validate_verify_output(missing, req.old_facts, req.current_facts, req.changed_slots)
 
 
+@pytest.mark.parametrize("job_value", ["professor", None])
+def test_verify_requires_only_queried_fact_when_multiple_slots_changed(job_value):
+    req = _alice_request()
+    current = {
+        **req.current_facts,
+        "job": _fact("alice_job", 2, "Alice", "job", job_value,
+                     ChangeType.RETRACTION if job_value is None else ChangeType.CORRECTION),
+    }
+    raw = json.dumps({
+        "verified_evidence": "Alice currently lives in Boston.",
+        "cited_sources": ["alice_location@v2"],
+        "retracted_slots": [],
+    })
+    # Literal attributes and paraphrased questions both allow query-local evidence.
+    for question in ("What is Alice's location?", "Where does Alice live?"):
+        out = validate_verify_output(
+            raw, req.old_facts, current, ("location", "job"), query_text=question,
+        )
+        assert out.cited_sources == ("alice_location@v2",)
+
+
+def test_verify_unchanged_queried_fact_does_not_require_unrelated_changed_value():
+    req = _alice_request()
+    raw = json.dumps({
+        "verified_evidence": "Alice is a researcher.",
+        "cited_sources": ["alice_job@v1"],
+        "retracted_slots": [],
+    })
+    out = validate_verify_output(
+        raw, req.old_facts, req.current_facts, req.changed_slots,
+        query_text="What is Alice's job?",
+    )
+    assert out.verified_evidence == "Alice is a researcher."
+
+
+@pytest.mark.parametrize(
+    "evidence,citations,error",
+    [
+        ("Alice is a professor.", ["alice_job@v2"], "missing current refs for queried slots"),
+        ("Alice is a researcher.", ["alice_location@v2"], "missing current value"),
+        ("Alice lives in Maryland.", ["alice_location@v1"], "unknown or superseded"),
+        ("Alice lives in Boston; her old job was researcher.",
+         ["alice_location@v2"], "leaked superseded value"),
+    ],
+)
+def test_query_scoped_verify_still_rejects_missing_target_stale_citations_and_leaks(
+    evidence, citations, error,
+):
+    req = _alice_request()
+    current = {
+        **req.current_facts,
+        "job": _fact("alice_job", 2, "Alice", "job", "professor", ChangeType.CORRECTION),
+    }
+    raw = json.dumps({"verified_evidence": evidence, "cited_sources": citations})
+    with pytest.raises(LLMVerificationError, match=error):
+        validate_verify_output(
+            raw, req.old_facts, current, ("location", "job"),
+            query_text="What is Alice's location?",
+        )
+
+
+def test_verify_checks_every_explicitly_queried_attribute():
+    req = _alice_request()
+    raw = json.dumps({
+        "verified_evidence": "Alice lives in Boston.",
+        "cited_sources": ["alice_location@v2"],
+    })
+    with pytest.raises(LLMVerificationError, match="missing current refs for queried slots"):
+        validate_verify_output(
+            raw, req.old_facts, req.current_facts, req.changed_slots,
+            query_text="What are Alice's location and job?",
+        )
+
+
+def test_verify_matches_queried_entity_and_attribute_in_fanout_summary():
+    req = _alice_request()
+    old = {**req.old_facts, "linked_location": _fact("bob_location", 1, "Bob", "location", "Utah")}
+    current = {
+        **req.current_facts,
+        "linked_location": _fact("bob_location", 2, "Bob", "location", "Oregon", ChangeType.CORRECTION),
+    }
+    raw = json.dumps({
+        "verified_evidence": "Alice lives in Boston.",
+        "cited_sources": ["alice_location@v2"],
+    })
+    out = validate_verify_output(
+        raw, old, current, ("location", "linked_location"),
+        query_text="What is Alice's location?",
+    )
+    assert out.cited_sources == ("alice_location@v2",)
+
+
+def test_verify_retracted_queried_fact_requires_acknowledgment_and_no_old_value():
+    req = _alice_request()
+    current = {
+        **req.current_facts,
+        "job": _fact("alice_job", 2, "Alice", "job", None, ChangeType.RETRACTION),
+    }
+    def validate(evidence):
+        return validate_verify_output(
+            json.dumps({"verified_evidence": evidence, "cited_sources": ["alice_job@v2"]}),
+            req.old_facts, current, ("location", "job"), query_text="What is Alice's job?",
+        )
+
+    assert validate("Alice's job is retracted.").cited_sources == ("alice_job@v2",)
+    with pytest.raises(LLMVerificationError, match="must acknowledge retraction"):
+        validate("Alice has a job.")
+    with pytest.raises(LLMVerificationError, match="leaked superseded value"):
+        validate("Alice's researcher job is retracted.")
+
+
 def test_validate_repair_output_accepts_natural_prose_and_checks_invariants():
     req = _alice_request()
     good = json.dumps({
@@ -444,6 +555,12 @@ def test_validate_repair_retraction_phrasings_and_expiry_rollback():
 def test_reader_system_prompt_preserves_verified_stale_answering_contract():
     from verify_repair.llm.prompts import READER_SYSTEM_PROMPT
 
-    assert "only describes a different attribute" not in READER_SYSTEM_PROMPT
+    # The broad v5 instruction regressed the live stale Maryland case. Keep the
+    # model-facing prompt identical to the successful archived v4 reader.
+    import hashlib
+    assert hashlib.sha256(READER_SYSTEM_PROMPT.encode()).hexdigest() == (
+        "c1fa2d38ef922bc75fe6187b97cddb0a646df96d425684243818025294c855a5"
+    )
+    assert '"answer": "INSUFFICIENT_EVIDENCE"' in READER_SYSTEM_PROMPT
     assert "<required_claim_slots>" not in READER_SYSTEM_PROMPT
     assert "using ONLY the facts explicitly stated in <evidence>" in READER_SYSTEM_PROMPT

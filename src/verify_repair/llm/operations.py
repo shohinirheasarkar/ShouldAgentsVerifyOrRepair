@@ -117,7 +117,8 @@ class LLMVerifier:
             last_raw = response.text
             try:
                 validated = validate_verify_output(
-                    response.text, old_facts, current_facts, changed_slots
+                    response.text, old_facts, current_facts, changed_slots,
+                    query_text=query_text,
                 )
             except LLMVerificationError as exc:
                 last_error = exc
